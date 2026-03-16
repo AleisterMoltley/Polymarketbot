@@ -1,14 +1,14 @@
 /**
- * speedTrade.ts — Speed-Trading Strategy for Polymarket 5-Min Crypto Markets
+ * speedTrade.ts — Speed-Trading Strategy for Polymarket 5-Minute Markets
  *
- * This module implements a high-frequency trading strategy targeting BTC, ETH, and SOL
- * 5-minute crypto markets on Polymarket. It exploits last-second price lag opportunities
- * when prices become unsynced between sources.
+ * This module implements a trading strategy targeting 5-minute prediction markets
+ * on Polymarket. It exploits last-second price lag opportunities when prices
+ * become unsynced between sources.
  *
  * Key Features:
  * - WebSocket-based low-latency price streaming
  * - Last-second lag detection and exploitation
- * - 24/7 automated trading with configurable throttling
+ * - Automated trading with configurable throttling
  * - Paper trading mode for testing
  * - Wallet balance management
  */
@@ -22,8 +22,8 @@ import * as path from "path";
 
 // ── Types ──────────────────────────────────────────────────────────────────
 
-export interface CryptoPriceData {
-  symbol: "BTC" | "ETH" | "SOL";
+export interface MarketPriceData {
+  symbol: string;
   marketId: string;
   yesTokenId: string;
   noTokenId: string;
@@ -108,23 +108,13 @@ const DEFAULT_ASK_SPREAD = 1.01; // Default ask = midPrice * 1.01 (1% above)
 const PAPER_WIN_PROBABILITY = 0.6; // 60% chance of winning paper trades
 const PAPER_LOSS_FACTOR = 0.5; // Losing paper trades lose 50% of potential gain
 
-// Polymarket 5-minute crypto market condition IDs (example placeholders)
-// In production, these would be fetched from the Polymarket API
-const CRYPTO_MARKETS: Record<string, { conditionId: string; yesTokenId: string; noTokenId: string }> = {
-  BTC: {
-    conditionId: process.env.BTC_5MIN_CONDITION_ID ?? "btc-5min-market",
-    yesTokenId: process.env.BTC_5MIN_YES_TOKEN ?? "btc-5min-yes",
-    noTokenId: process.env.BTC_5MIN_NO_TOKEN ?? "btc-5min-no",
-  },
-  ETH: {
-    conditionId: process.env.ETH_5MIN_CONDITION_ID ?? "eth-5min-market",
-    yesTokenId: process.env.ETH_5MIN_YES_TOKEN ?? "eth-5min-yes",
-    noTokenId: process.env.ETH_5MIN_NO_TOKEN ?? "eth-5min-no",
-  },
-  SOL: {
-    conditionId: process.env.SOL_5MIN_CONDITION_ID ?? "sol-5min-market",
-    yesTokenId: process.env.SOL_5MIN_YES_TOKEN ?? "sol-5min-yes",
-    noTokenId: process.env.SOL_5MIN_NO_TOKEN ?? "sol-5min-no",
+// Polymarket 5-minute market condition IDs (configurable via environment)
+// These can be updated with actual Polymarket condition IDs for target markets
+const MARKETS: Record<string, { conditionId: string; yesTokenId: string; noTokenId: string }> = {
+  DEFAULT: {
+    conditionId: process.env.MARKET_5MIN_CONDITION_ID ?? "market-5min",
+    yesTokenId: process.env.MARKET_5MIN_YES_TOKEN ?? "market-5min-yes",
+    noTokenId: process.env.MARKET_5MIN_NO_TOKEN ?? "market-5min-no",
   },
 };
 
@@ -146,7 +136,7 @@ const DEFAULT_CONFIG: SpeedTradeConfig = {
 let ws: WebSocket | null = null;
 let isConnecting = false;
 let reconnectTimeout: ReturnType<typeof setTimeout> | null = null;
-let priceData: Map<string, CryptoPriceData> = new Map();
+let priceData: Map<string, MarketPriceData> = new Map();
 let config: SpeedTradeConfig = { ...DEFAULT_CONFIG };
 let _tradeIdCounter = 0;
 
@@ -193,7 +183,7 @@ function isInLastSecondWindow(): boolean {
 }
 
 /** Calculate price lag between current price and historical average. */
-function calculatePriceLag(data: CryptoPriceData): number {
+function calculatePriceLag(data: MarketPriceData): number {
   if (data.priceHistory.length < 3) return 0;
   
   const windowSize = Math.min(RECENT_PRICE_WINDOW, data.priceHistory.length);
@@ -202,7 +192,7 @@ function calculatePriceLag(data: CryptoPriceData): number {
 }
 
 /** Detect if price is lagging (unsynced) compared to recent history. */
-function detectPriceLag(data: CryptoPriceData): { isLagging: boolean; lagAmount: number; direction: "up" | "down" } {
+function detectPriceLag(data: MarketPriceData): { isLagging: boolean; lagAmount: number; direction: "up" | "down" } {
   const lagAmount = calculatePriceLag(data);
   const isLagging = lagAmount >= config.lagThreshold;
   
@@ -295,14 +285,14 @@ function scheduleReconnect(): void {
   }, RECONNECT_DELAY_MS);
 }
 
-/** Subscribe to crypto market price feeds. */
+/** Subscribe to market price feeds. */
 function subscribeToMarkets(): void {
   if (ws === null || ws.readyState !== WebSocket.OPEN) {
     return;
   }
 
-  const markets = Object.values(CRYPTO_MARKETS).map((m) => m.conditionId);
-  log(`Subscribing to ${markets.length} crypto markets: ${markets.join(", ")}`);
+  const markets = Object.values(MARKETS).map((m) => m.conditionId);
+  log(`Subscribing to ${markets.length} markets: ${markets.join(", ")}`);
   
   ws.send(JSON.stringify({
     action: "subscribe",
@@ -324,13 +314,13 @@ function handlePriceMessage(data: unknown): void {
     if (!marketId) return;
 
     // Find the symbol for this market
-    const symbol = Object.entries(CRYPTO_MARKETS).find(
+    const symbol = Object.entries(MARKETS).find(
       ([, m]) => m.conditionId === marketId
-    )?.[0] as "BTC" | "ETH" | "SOL" | undefined;
+    )?.[0] as string | undefined;
 
     if (!symbol) return;
 
-    const marketConfig = CRYPTO_MARKETS[symbol];
+    const marketConfig = MARKETS[symbol];
     const existing = priceData.get(marketId);
     const priceHistory = existing?.priceHistory ?? [];
     
@@ -343,7 +333,7 @@ function handlePriceMessage(data: unknown): void {
     const bestBid = typeof msg.bestBid === "number" ? msg.bestBid : msg.midPrice * DEFAULT_BID_SPREAD;
     const bestAsk = typeof msg.bestAsk === "number" ? msg.bestAsk : msg.midPrice * DEFAULT_ASK_SPREAD;
 
-    const updatedData: CryptoPriceData = {
+    const updatedData: MarketPriceData = {
       symbol,
       marketId,
       yesTokenId: marketConfig.yesTokenId,
@@ -368,7 +358,7 @@ function handlePriceMessage(data: unknown): void {
 // ── Trading Logic ──────────────────────────────────────────────────────────
 
 /** Evaluate if there's a trade opportunity based on price lag. */
-async function evaluateTradeOpportunity(data: CryptoPriceData): Promise<void> {
+async function evaluateTradeOpportunity(data: MarketPriceData): Promise<void> {
   // Check throttle
   if (isThrottled(data.marketId)) {
     return;
@@ -608,7 +598,7 @@ export function stopSpeedTrading(): void {
 }
 
 /** Get current speed trading state. */
-export function getSpeedTradeState(): SpeedTradeState & { prices: CryptoPriceData[] } {
+export function getSpeedTradeState(): SpeedTradeState & { prices: MarketPriceData[] } {
   return {
     ...state,
     currentPositions: new Map(state.currentPositions),
@@ -648,16 +638,16 @@ export function getSpeedTradeHistory(): SpeedTradeResult[] {
   return [];
 }
 
-/** Get price data for a specific symbol. */
-export function getCryptoPriceData(symbol: "BTC" | "ETH" | "SOL"): CryptoPriceData | undefined {
-  const marketConfig = CRYPTO_MARKETS[symbol];
+/** Get price data for a specific market symbol. */
+export function getMarketPriceData(symbol: string): MarketPriceData | undefined {
+  const marketConfig = MARKETS[symbol];
   if (!marketConfig) return undefined;
   return priceData.get(marketConfig.conditionId);
 }
 
 /** Manually trigger a trade opportunity check (for testing). */
-export async function triggerTradeCheck(symbol: "BTC" | "ETH" | "SOL"): Promise<void> {
-  const data = getCryptoPriceData(symbol);
+export async function triggerTradeCheck(symbol: string): Promise<void> {
+  const data = getMarketPriceData(symbol);
   if (data) {
     await evaluateTradeOpportunity(data);
   }

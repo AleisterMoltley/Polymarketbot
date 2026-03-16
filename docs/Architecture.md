@@ -2,12 +2,11 @@
 
 ## Overview
 
-Polymarketbot is a TypeScript trading bot for [Polymarket](https://polymarket.com) prediction markets running on Polygon.  It combines:
+Polymarketbot is a TypeScript trading bot for [Polymarket](https://polymarket.com) prediction markets, optimized for 5-minute interval trading loops. It combines:
 
 - A **REST + WebSocket API** (Express / `ws`) for the admin dashboard
-- A **trading loop** that polls the Polymarket CLOB for active markets and places orders when a configurable edge threshold is met
+- A **trading loop** that polls the Polymarket CLOB at configurable intervals (default: 5 minutes) and places orders when a configurable edge threshold is met
 - An optional **paper-trade mode** that simulates orders locally without hitting the blockchain
-- A **swap layer** (Paraswap) for MATIC ↔ USDC conversion with slippage protection
 - **Position tracking** to prevent duplicate orders
 - **Balance checking** before live trades
 - **Graceful shutdown** handling for clean process termination
@@ -26,7 +25,9 @@ Polymarketbot is a TypeScript trading bot for [Polymarket](https://polymarket.co
 │   │   └── tabs.ts    Express routes for the admin UI (with auth)
 │   ├── bot/       Core bot logic
 │   │   ├── trading.ts Market polling, order placement, position tracking
-│   │   └── swaps.ts   Token swap helper (Paraswap) with slippage protection
+│   │   ├── speedTrade.ts 5-minute interval trading with lag detection
+│   │   ├── orders.ts  CLOB API order placement
+│   │   └── priceStream.ts WebSocket price streaming
 │   ├── utils/     Shared helpers
 │   │   ├── jsonStore.ts  In-memory key-value store with disk persistence
 │   │   └── wallet.ts     Ethers.js wallet loader with token balance checking
@@ -72,7 +73,7 @@ External: Polymarket CLOB API
 
 ## Trading Strategy
 
-The default strategy is **simple probability arbitrage**:
+The default strategy is **simple probability arbitrage** optimized for 5-minute intervals:
 
 1. For each active market, the bot retrieves the current YES/NO prices (implied probabilities).
 2. **Position check**: Skip outcomes where we already hold a position (prevents duplicates).
@@ -94,14 +95,6 @@ The admin API endpoints (`/admin/stats`, `/admin/trades`, `/admin/store`) are pr
 - Pass the secret via `X-Admin-Secret` header or `?secret=` query parameter
 - The main dashboard page (`/admin`) is accessible without authentication
 
-### Swap Protection
-
-Token swaps include slippage and price impact protection:
-
-- Default max slippage: 2%
-- Default max price impact: 5%
-- Swaps are rejected if price impact exceeds the threshold
-
 ---
 
 ## Environment Variables
@@ -109,6 +102,7 @@ Token swaps include slippage and price impact protection:
 | Variable | Default | Description |
 |---|---|---|
 | `CLOB_API_URL` | `https://clob.polymarket.com` | Polymarket CLOB base URL |
+| `CLOB_WS_URL` | `wss://clob.polymarket.com/ws` | Polymarket WebSocket URL |
 | `CLOB_API_KEY` | — | CLOB API key |
 | `CLOB_API_SECRET` | — | CLOB API secret |
 | `CLOB_API_PASSPHRASE` | — | CLOB API passphrase |
@@ -118,11 +112,12 @@ Token swaps include slippage and price impact protection:
 | `PAPER_TRADE` | `true` | Enable paper-trade mode |
 | `MAX_POSITION_SIZE_USDC` | `100` | Max USDC per trade |
 | `MIN_EDGE` | `0.05` | Minimum edge before entering |
-| `POLL_INTERVAL_MS` | `30000` | Market poll interval |
+| `POLL_INTERVAL_MS` | `300000` | Market poll interval (5 minutes default) |
 | `PORT` | `3000` | Admin server port |
 | `ADMIN_SECRET` | — | Secret for admin API authentication |
 | `STATS_BROADCAST_INTERVAL_MS` | `10000` | WebSocket stats broadcast interval |
 | `DATA_DIR` | `./data` | Directory for JSON store backups |
+| `ENABLE_SPEED_TRADING` | `false` | Enable 5-minute interval speed trading |
 
 ---
 
