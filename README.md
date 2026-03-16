@@ -107,25 +107,46 @@ Open **http://localhost:3000** to access the admin dashboard.
 
 To upgrade to the latest version of Polymarketbot on macOS:
 
-```bash
-# Navigate to your Polymarketbot directory
-cd ~/Polymarketbot  # or wherever you cloned the repo
+**Step 1: Navigate to your Polymarketbot directory**
 
-# Fetch and pull the latest changes
+```bash
+cd ~/Polymarketbot
+```
+
+> **Note:** Replace `~/Polymarketbot` with the actual path where you cloned the repository if different.
+
+**Step 2: Fetch and pull the latest changes**
+
+```bash
 git fetch origin
 git pull origin main
-
-# Install any new dependencies
-npm install
-
-# Rebuild the project
-npm run build
-
-# Restart the bot
-npm run dev        # for development mode
-# or
-npm start          # for production mode
 ```
+
+**Step 3: Install any new dependencies**
+
+```bash
+npm install
+```
+
+**Step 4: Rebuild the project**
+
+```bash
+npm run build
+```
+
+**Step 5: Restart the bot**
+
+For development mode:
+```bash
+npm run dev
+```
+
+Or for production mode:
+```bash
+npm start
+```
+
+**Docker Upgrade**
 
 If you're using Docker, rebuild the image after pulling:
 
