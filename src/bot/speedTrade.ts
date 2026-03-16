@@ -552,6 +552,11 @@ export async function startSpeedTrading(customConfig?: Partial<SpeedTradeConfig>
     return;
   }
 
+  // Warn if user tries to override paperMode (it's locked to true)
+  if (customConfig?.paperMode === false) {
+    log("Warning: paperMode=false was provided but is ignored. This bot only supports paper trading.", "warn");
+  }
+
   // Merge custom config but always enforce paper mode
   config = { ...DEFAULT_CONFIG, ...customConfig, paperMode: PAPER_MODE_ONLY };
   

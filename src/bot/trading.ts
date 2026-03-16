@@ -192,7 +192,7 @@ export async function runTradingLoop(): Promise<void> {
   // Always use 5-minute interval regardless of env setting
   const interval = FIVE_MINUTE_INTERVAL_MS;
   console.log(`[trading] Starting 5-minute paper trading loop (interval=${interval}ms)`);
-  console.log(`[trading] Paper mode: ${PAPER_MODE_ONLY ? 'ENABLED (locked)' : 'disabled'}`);
+  console.log('[trading] Paper mode: ENABLED (locked)');
   _isRunning = true;
 
   const tick = async () => {
