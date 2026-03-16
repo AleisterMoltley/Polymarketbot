@@ -128,3 +128,15 @@ export async function executeSwap(
   console.log(`[swaps] Transaction confirmed: ${tx.hash}`);
   return tx.hash;
 }
+
+/**
+ * Auto-Swap USDC to MATIC on Polygon.
+ * Convenience wrapper for executeSwap that converts USDC to MATIC.
+ *
+ * @param amount - The amount of USDC to swap (in human-readable units, e.g. 10 for 10 USDC)
+ * @returns the transaction hash
+ */
+export async function autoSwapUSDCtoMATIC(amount: number): Promise<string> {
+  console.log(`Swapping ${amount} USDC to MATIC...`);
+  return executeSwap("USDC", "MATIC", amount.toString());
+}
