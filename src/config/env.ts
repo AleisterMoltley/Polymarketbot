@@ -42,6 +42,10 @@ export interface TradingConfig {
   maxPositionSizeUsdc: number;
   /** Minimum edge threshold to trigger a trade (e.g., 0.05 = 5%) */
   minEdge: number;
+  /** Enable liquidity-weighted edge calculation */
+  enableLiquidityWeightedEdge: boolean;
+  /** Reference liquidity for normalization in USDC (markets with this liquidity have weight 1.0) */
+  liquidityReferenceUsdc: number;
   /** Trading loop interval in milliseconds (default: 300000 = 5 min) */
   pollIntervalMs: number;
   /** Enable speed trading on startup */
@@ -203,6 +207,8 @@ function loadConfig(): AppConfig {
       tradingMode: process.env.TRADING_MODE === "live" ? "live" : "paper",
       maxPositionSizeUsdc: parseEnvFloat("MAX_POSITION_SIZE_USDC", 100),
       minEdge: parseEnvFloat("MIN_EDGE", 0.05),
+      enableLiquidityWeightedEdge: parseBoolean("ENABLE_LIQUIDITY_WEIGHTED_EDGE", false),
+      liquidityReferenceUsdc: parseEnvFloat("LIQUIDITY_REFERENCE_USDC", 10000),
       pollIntervalMs: parseEnvInt("POLL_INTERVAL_MS", 300000),
       enableSpeedTrading: parseBoolean("ENABLE_SPEED_TRADING", false),
       minBalanceUsdc: parseEnvFloat("MIN_BALANCE_USDC", 10),
