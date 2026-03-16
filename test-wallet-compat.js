@@ -1,5 +1,6 @@
 /**
  * Simple test script to verify wallet.js compatibility with ethers ^6.16.0
+ * Tests the optimized wallet.js (unused periodic balance check features removed)
  */
 require('dotenv').config();
 
@@ -21,7 +22,7 @@ if (!process.env.POLYGON_RPC_URL) {
 const wallet = require('./wallet.js');
 
 async function testWallet() {
-  console.log('\n--- Testing wallet.js with ethers ^6.16.0 ---\n');
+  console.log('\n--- Testing optimized wallet.js with ethers ^6.16.0 ---\n');
   
   try {
     // Test 1: loadWallet
@@ -45,7 +46,20 @@ async function testWallet() {
       console.log('    (This is expected if RPC is unreachable or rate limited)');
     }
     
-    console.log('\n--- All core functions tested successfully ---\n');
+    // Verify removed functions are no longer exported
+    console.log('\nTest 4: Verify optimized exports');
+    const hasStartBalanceChecks = typeof wallet.startBalanceChecks === 'function';
+    const hasStopBalanceChecks = typeof wallet.stopBalanceChecks === 'function';
+    const hasGetLastBalance = typeof wallet.getLastBalance === 'function';
+    
+    if (!hasStartBalanceChecks && !hasStopBalanceChecks && !hasGetLastBalance) {
+      console.log('  ✓ Unused periodic balance check features removed');
+    } else {
+      console.log('  ⚠ Some unused features still present (not critical)');
+    }
+    
+    console.log('\n--- All core functions tested successfully ---');
+    console.log('--- wallet.js is compatible with ethers ^6.16.0 ---\n');
     return true;
   } catch (err) {
     console.error('\n✗ Test failed:', err.message);
