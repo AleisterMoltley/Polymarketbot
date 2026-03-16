@@ -11,6 +11,7 @@
  * - Automated trading with configurable throttling
  * - Paper trading mode for testing
  * - Wallet balance management
+ * - Trading hours restriction support (10 AM - 4 PM EST)
  */
 
 import WebSocket from "ws";
@@ -18,6 +19,7 @@ import { getWallet, getTokenBalance, hasEnoughBalance } from "../utils/wallet";
 import { recordTrade, getAllTrades, type TradeRecord } from "../admin/stats";
 import { getItem, setItem, saveStore } from "../utils/jsonStore";
 import { isPaperMode } from "../admin/tradingMode";
+import { isTradingAllowed, getTradingHoursStatus } from "../utils/tradingHours";
 import * as fs from "fs";
 import * as path from "path";
 
@@ -364,8 +366,16 @@ function handlePriceMessage(data: unknown): void {
 
 // ── Trading Logic ──────────────────────────────────────────────────────────
 
-/** Evaluate if there's a trade opportunity based on price lag. */
+/** Evaluate if there's a trade opportunity based on price lag.
+ *  Respects trading hours restriction when enabled.
+ */
 async function evaluateTradeOpportunity(data: MarketPriceData): Promise<void> {
+  // Check trading hours restriction first
+  if (!isTradingAllowed()) {
+    // Trading is paused due to hours restriction - skip silently
+    return;
+  }
+
   // Check throttle
   if (isThrottled(data.marketId)) {
     return;
@@ -550,7 +560,9 @@ function appendToPaperHistory(trade: SpeedTradeResult): void {
 
 // ── Public API ─────────────────────────────────────────────────────────────
 
-/** Start the speed trading loop. Supports both paper and live trading modes. */
+/** Start the speed trading loop. Supports both paper and live trading modes.
+ *  Respects trading hours restriction when enabled.
+ */
 export async function startSpeedTrading(customConfig?: Partial<SpeedTradeConfig>): Promise<void> {
   if (state.isRunning) {
     log("Speed trading already running", "warn");
@@ -564,6 +576,7 @@ export async function startSpeedTrading(customConfig?: Partial<SpeedTradeConfig>
   config = { ...DEFAULT_CONFIG, ...customConfig, paperMode };
   
   log(`Starting speed trading (mode=${paperMode ? 'PAPER' : 'LIVE'}, throttle=${config.throttleMs}ms, lagThreshold=${config.lagThreshold})`);
+  log(getTradingHoursStatus());
   
   // Check balance for live trading
   if (!paperMode) {
@@ -585,7 +598,7 @@ export async function startSpeedTrading(customConfig?: Partial<SpeedTradeConfig>
   // Connect to WebSocket for low-latency prices
   connectWebSocket();
 
-  log("Speed trading started - 24/7 monitoring active");
+  log("Speed trading started - monitoring active (respects trading hours if enabled)");
 }
 
 /** Stop the speed trading loop. */

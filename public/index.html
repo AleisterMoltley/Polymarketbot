@@ -183,6 +183,70 @@
       color: #fff;
     }
     .hidden { display: none !important; }
+    
+    /* Trading Hours Toggle */
+    .hours-toggle-container {
+      display: flex;
+      align-items: center;
+      gap: 8px;
+      margin-left: 24px;
+      padding-left: 24px;
+      border-left: 1px solid #30363d;
+    }
+    .hours-toggle {
+      position: relative;
+      width: 48px;
+      height: 24px;
+      background: #21262d;
+      border-radius: 12px;
+      cursor: pointer;
+      border: 1px solid #30363d;
+      transition: all 0.3s ease;
+    }
+    .hours-toggle:hover {
+      border-color: #58a6ff;
+    }
+    .hours-toggle-slider {
+      position: absolute;
+      top: 2px;
+      left: 2px;
+      width: 18px;
+      height: 18px;
+      background: #6e7681;
+      border-radius: 50%;
+      transition: all 0.3s ease;
+    }
+    .hours-toggle.active {
+      background: #1f6feb;
+      border-color: #1f6feb;
+    }
+    .hours-toggle.active .hours-toggle-slider {
+      left: calc(100% - 20px);
+      background: #fff;
+    }
+    .hours-label {
+      font-size: 0.8rem;
+      color: #8b949e;
+    }
+    .hours-status {
+      font-size: 0.75rem;
+      padding: 2px 8px;
+      border-radius: 12px;
+      background: #21262d;
+      color: #8b949e;
+    }
+    .hours-status.active {
+      background: #238636;
+      color: #fff;
+    }
+    .hours-status.paused {
+      background: #9e6a03;
+      color: #fff;
+    }
+    .hours-status.disabled {
+      background: #6e7681;
+      color: #fff;
+    }
   </style>
 </head>
 <body>
@@ -198,6 +262,13 @@
           <span class="mode-toggle-label live">LIVE</span>
         </div>
       </div>
+    </div>
+    <div class="hours-toggle-container">
+      <span class="hours-label">10AM-4PM EST Only:</span>
+      <div class="hours-toggle" id="hours-toggle" onclick="toggleTradingHours()">
+        <div class="hours-toggle-slider"></div>
+      </div>
+      <span class="hours-status" id="hours-status">OFF</span>
     </div>
   </header>
 
@@ -331,6 +402,61 @@
       }
     }
 
+    // ── Trading Hours State ───────────────────────────────────────────────
+    let tradingHoursState = { enabled: false, tradingAllowed: true };
+
+    function updateTradingHoursUI(state) {
+      tradingHoursState = state;
+      const toggle = document.getElementById('hours-toggle');
+      const status = document.getElementById('hours-status');
+      
+      if (state.enabled) {
+        toggle.classList.add('active');
+        if (state.tradingAllowed) {
+          status.textContent = 'ACTIVE';
+          status.className = 'hours-status active';
+        } else {
+          status.textContent = 'PAUSED';
+          status.className = 'hours-status paused';
+        }
+      } else {
+        toggle.classList.remove('active');
+        status.textContent = 'OFF';
+        status.className = 'hours-status disabled';
+      }
+    }
+
+    async function toggleTradingHours() {
+      try {
+        const res = await fetch('/api/trading-hours/toggle', {
+          method: 'POST',
+          headers: { 'Content-Type': 'application/json' }
+        });
+        const data = await res.json();
+        if (data.success) {
+          updateTradingHoursUI(data.state);
+          console.log('Trading hours toggled:', data.state.enabled ? 'enabled' : 'disabled');
+        } else {
+          console.error('Failed to toggle trading hours:', data.error);
+          alert('Failed to toggle trading hours: ' + data.error);
+        }
+      } catch (err) {
+        console.error('Error toggling trading hours:', err);
+        alert('Error toggling trading hours. Check console for details.');
+      }
+    }
+
+    // Load initial trading hours state
+    async function loadTradingHours() {
+      try {
+        const res = await fetch('/api/trading-hours');
+        const data = await res.json();
+        updateTradingHoursUI(data);
+      } catch (err) {
+        console.error('Failed to load trading hours:', err);
+      }
+    }
+
     function showTab(name, btn) {
       document.querySelectorAll('.tab').forEach(t => t.classList.remove('active'));
       document.querySelectorAll('nav button').forEach(b => b.classList.remove('active'));
@@ -348,9 +474,12 @@
         const { event, data: payload } = JSON.parse(data);
         if (event === 'stats') renderStats(payload);
         if (event === 'tradingMode') updateModeUI(payload.mode);
+        if (event === 'tradingHours') updateTradingHoursUI(payload);
       } catch {}
     });
     setInterval(() => { if (ws.readyState === 1) ws.send(JSON.stringify({ command: 'stats' })); }, 10000);
+    // Also periodically refresh trading hours status (in case time changes affect it)
+    setInterval(() => { if (ws.readyState === 1) ws.send(JSON.stringify({ command: 'tradingHours' })); }, 30000);
 
     function renderStats(s) {
       document.getElementById('stat-total').textContent  = s.totalTrades;
@@ -392,6 +521,7 @@
 
     // ── Initialize ────────────────────────────────────────────────────────
     loadTradingMode();
+    loadTradingHours();
   </script>
 </body>
 </html>
