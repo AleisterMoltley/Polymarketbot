@@ -15,6 +15,14 @@ export interface SwapQuote {
   route: string;
 }
 
+/** Options for executing a swap. */
+export interface SwapOptions {
+  /** Maximum allowed slippage as a decimal (e.g., 0.02 for 2%). Default: 0.02 */
+  maxSlippage?: number;
+  /** Maximum allowed price impact as a decimal. Default: 0.05 (5%) */
+  maxPriceImpact?: number;
+}
+
 // Well-known Polygon token addresses
 const TOKEN_ADDRESSES: Record<TokenSymbol, string> = {
   MATIC: "0xEeeeeEeeeEeEeeEeEeEeeEEEeeeeEeeeeeeeEEeE",
@@ -23,6 +31,11 @@ const TOKEN_ADDRESSES: Record<TokenSymbol, string> = {
 };
 
 const PARASWAP_API = "https://apiv5.paraswap.io";
+
+// Default configuration
+const DEFAULT_MAX_SLIPPAGE = 0.02; // 2%
+const DEFAULT_MAX_PRICE_IMPACT = 0.05; // 5%
+const BASIS_POINTS_DIVISOR = 10000;
 
 /**
  * Fetch a swap quote from Paraswap for the given token pair and amount.
@@ -65,17 +78,28 @@ export async function getSwapQuote(
 }
 
 /**
- * Execute a swap on Paraswap.
+ * Execute a swap on Paraswap with slippage protection.
  * Builds the transaction data via the Paraswap transactions endpoint and
  * broadcasts it using the loaded wallet.
  *
+ * @param tokenIn - The source token symbol
+ * @param tokenOut - The destination token symbol
+ * @param amountIn - The amount to swap (in human-readable units)
+ * @param options - Optional swap configuration (slippage, price impact limits)
  * @returns the transaction hash
+ * @throws Error if price impact exceeds maxPriceImpact
  */
 export async function executeSwap(
   tokenIn: TokenSymbol,
   tokenOut: TokenSymbol,
-  amountIn: string
+  amountIn: string,
+  options: SwapOptions = {}
 ): Promise<string> {
+  const { 
+    maxSlippage = DEFAULT_MAX_SLIPPAGE, 
+    maxPriceImpact = DEFAULT_MAX_PRICE_IMPACT 
+  } = options;
+  
   const wallet = getWallet();
 
   const quote = await getSwapQuote(tokenIn, tokenOut, amountIn);
@@ -83,13 +107,21 @@ export async function executeSwap(
     `[swaps] Quote: ${quote.amountIn} ${tokenIn} → ${quote.amountOut} ${tokenOut} (impact: ${quote.priceImpact}%)`
   );
 
+  // Validate price impact
+  const priceImpactDecimal = Math.abs(quote.priceImpact) / 100;
+  if (priceImpactDecimal > maxPriceImpact) {
+    throw new Error(
+      `Price impact ${quote.priceImpact.toFixed(2)}% exceeds maximum allowed ${(maxPriceImpact * 100).toFixed(2)}%`
+    );
+  }
+
   const decimals: Record<TokenSymbol, number> = { MATIC: 18, USDC: 6, WETH: 18 };
   const srcDecimals = decimals[tokenIn];
   const destDecimals = decimals[tokenOut];
 
   const amountInWei = ethers.parseUnits(amountIn, srcDecimals).toString();
 
-  // Re-fetch price route to get the full object needed for transaction building
+  // Fetch fresh price route for transaction building
   const { data: priceData } = await axios.get(`${PARASWAP_API}/prices`, {
     params: {
       srcToken: TOKEN_ADDRESSES[tokenIn],
@@ -102,16 +134,26 @@ export async function executeSwap(
     timeout: 10_000,
   });
 
+  // Calculate minimum amount out with slippage tolerance
+  const destAmount = BigInt(priceData.priceRoute.destAmount);
+  const slippageBps = BigInt(Math.floor(maxSlippage * BASIS_POINTS_DIVISOR));
+  const minDestAmount = destAmount - (destAmount * slippageBps) / BigInt(BASIS_POINTS_DIVISOR);
+
+  console.log(
+    `[swaps] Min output: ${ethers.formatUnits(minDestAmount, destDecimals)} ${tokenOut} (with ${(maxSlippage * 100).toFixed(1)}% slippage tolerance)`
+  );
+
   const { data: txData } = await axios.post(
     `${PARASWAP_API}/transactions/137`,
     {
       srcToken: TOKEN_ADDRESSES[tokenIn],
       destToken: TOKEN_ADDRESSES[tokenOut],
       srcAmount: amountInWei,
-      destAmount: priceData.priceRoute.destAmount,
+      destAmount: minDestAmount.toString(), // Use minimum amount for slippage protection
       priceRoute: priceData.priceRoute,
       userAddress: wallet.address,
       partner: "polymarketbot",
+      slippage: Math.floor(maxSlippage * BASIS_POINTS_DIVISOR), // Slippage in basis points
     },
     { timeout: 10_000 }
   );
