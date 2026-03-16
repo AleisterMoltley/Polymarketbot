@@ -1,8 +1,37 @@
-import { Router, Request, Response } from "express";
+import { Router, Request, Response, NextFunction } from "express";
 import { getAllTrades, getStats } from "./stats";
 import { getSnapshot } from "../utils/jsonStore";
 
 const router = Router();
+
+const ADMIN_SECRET = process.env.ADMIN_SECRET;
+
+/** Authentication middleware for admin routes */
+function authMiddleware(req: Request, res: Response, next: NextFunction): void {
+  // Skip auth for the main dashboard page (HTML shell)
+  if (req.path === "/" || req.path === "") {
+    next();
+    return;
+  }
+
+  // Check for admin secret in header or query param
+  const token = req.headers["x-admin-secret"] || req.query.secret;
+
+  if (!ADMIN_SECRET) {
+    console.warn("[admin] ADMIN_SECRET not configured — API is unprotected");
+    next();
+    return;
+  }
+
+  if (token !== ADMIN_SECRET) {
+    res.status(401).json({ error: "Unauthorized", message: "Invalid or missing admin secret" });
+    return;
+  }
+
+  next();
+}
+
+router.use(authMiddleware);
 
 /** GET /admin — simple HTML dashboard shell */
 router.get("/", (_req: Request, res: Response) => {
@@ -41,9 +70,24 @@ router.get("/stats", (_req: Request, res: Response) => {
   res.json(getStats());
 });
 
-/** GET /admin/trades — full trade history as JSON */
-router.get("/trades", (_req: Request, res: Response) => {
-  res.json(getAllTrades());
+/** GET /admin/trades — trade history with pagination */
+router.get("/trades", (req: Request, res: Response) => {
+  const trades = getAllTrades();
+  const page = Math.max(1, parseInt(req.query.page as string, 10) || 1);
+  const limit = Math.min(100, Math.max(1, parseInt(req.query.limit as string, 10) || 50));
+  const start = (page - 1) * limit;
+  const end = start + limit;
+  const paginated = trades.slice(start, end);
+
+  res.json({
+    trades: paginated,
+    pagination: {
+      page,
+      limit,
+      total: trades.length,
+      totalPages: Math.ceil(trades.length / limit),
+    },
+  });
 });
 
 /** GET /admin/store — raw in-memory store snapshot */

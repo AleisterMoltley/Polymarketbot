@@ -1,6 +1,7 @@
 import axios from "axios";
-import { getWallet } from "../utils/wallet";
-import { recordTrade } from "../admin/stats";
+import { getWallet, getTokenBalance } from "../utils/wallet";
+import { recordTrade, getAllTrades } from "../admin/stats";
+import { getItem, setItem } from "../utils/jsonStore";
 import type { TradeRecord } from "../admin/stats";
 
 let _tradeIdCounter = 0;
@@ -13,6 +14,31 @@ export interface Market {
   question: string;
   outcomes: string[];
   prices: number[];
+}
+
+/** Track open positions to prevent duplicates */
+interface Position {
+  market: string;
+  outcome: string;
+  size: number;
+  entryPrice: number;
+  timestamp: number;
+}
+
+const POSITIONS_KEY = "positions";
+
+function getPositions(): Position[] {
+  return getItem<Position[]>(POSITIONS_KEY) ?? [];
+}
+
+function addPosition(pos: Position): void {
+  const positions = getPositions();
+  positions.push(pos);
+  setItem(POSITIONS_KEY, positions, true);
+}
+
+function hasExistingPosition(market: string, outcome: string): boolean {
+  return getPositions().some((p) => p.market === market && p.outcome === outcome);
 }
 
 /** Fetch a list of active markets from the Polymarket CLOB API. */
@@ -33,6 +59,7 @@ export async function fetchMarkets(): Promise<Market[]> {
 /**
  * Evaluate a market and return a trade signal if edge exceeds MIN_EDGE.
  * In paper-trade mode no real order is sent.
+ * Includes position tracking to prevent duplicate orders and balance checks.
  */
 export async function evaluateAndTrade(market: Market): Promise<void> {
   const minEdge = parseFloat(process.env.MIN_EDGE ?? "0.05");
@@ -43,6 +70,14 @@ export async function evaluateAndTrade(market: Market): Promise<void> {
     const price = market.prices[i];
     if (price === undefined) continue;
 
+    const outcome = market.outcomes[i];
+
+    // Check for existing position to prevent duplicates
+    if (hasExistingPosition(market.conditionId, outcome)) {
+      console.log(`[trading] Skipping duplicate position: ${market.conditionId} / ${outcome}`);
+      continue;
+    }
+
     // Simple edge model: buy if implied probability is below (1 - MIN_EDGE)
     const edge = 1 - price - minEdge;
     if (edge <= 0) continue;
@@ -51,11 +86,24 @@ export async function evaluateAndTrade(market: Market): Promise<void> {
     const CENTS = 100;
     const size = Math.min(maxSize, Math.round(edge * maxSize * CENTS) / CENTS);
 
+    // Check balance for live trades
+    if (!isPaper) {
+      try {
+        const balance = await getTokenBalance("USDC");
+        if (parseFloat(balance) < size) {
+          console.warn(`[trading] Insufficient USDC balance (${balance}) for trade size (${size})`);
+          continue;
+        }
+      } catch (err) {
+        console.warn("[trading] Could not check balance, proceeding anyway:", err);
+      }
+    }
+
     const trade: TradeRecord = {
       id: newId(),
       market: market.conditionId,
       side: "BUY",
-      outcome: market.outcomes[i],
+      outcome,
       price,
       size,
       timestamp: Date.now(),
@@ -67,14 +115,30 @@ export async function evaluateAndTrade(market: Market): Promise<void> {
       try {
         await submitOrder(trade);
         trade.status = "FILLED";
+        // Track the position
+        addPosition({
+          market: market.conditionId,
+          outcome,
+          size,
+          entryPrice: price,
+          timestamp: Date.now(),
+        });
       } catch (err) {
         console.error("[trading] submitOrder error:", err);
         trade.status = "CANCELLED";
       }
     } else {
-      console.log(`[paper-trade] BUY ${size} USDC of "${market.outcomes[i]}" @ ${price}`);
+      console.log(`[paper-trade] BUY ${size} USDC of "${outcome}" @ ${price}`);
       trade.status = "FILLED";
       trade.pnl = 0;
+      // Track paper position too
+      addPosition({
+        market: market.conditionId,
+        outcome,
+        size,
+        entryPrice: price,
+        timestamp: Date.now(),
+      });
     }
 
     recordTrade(trade);
@@ -112,19 +176,46 @@ async function submitOrder(trade: TradeRecord): Promise<void> {
   );
 }
 
+let _tradingLoopTimer: NodeJS.Timeout | null = null;
+let _isRunning = false;
+
 /** Main trading loop — polls markets and evaluates trade signals. */
 export async function runTradingLoop(): Promise<void> {
   const interval = parseInt(process.env.POLL_INTERVAL_MS ?? "30000", 10);
   console.log(`[trading] Starting loop (interval=${interval}ms, paper=${process.env.PAPER_TRADE})`);
+  _isRunning = true;
 
   const tick = async () => {
-    const markets = await fetchMarkets();
-    console.log(`[trading] Evaluating ${markets.length} markets…`);
-    for (const market of markets) {
-      await evaluateAndTrade(market);
+    if (!_isRunning) return;
+    
+    try {
+      const markets = await fetchMarkets();
+      console.log(`[trading] Evaluating ${markets.length} markets…`);
+      for (const market of markets) {
+        if (!_isRunning) break;
+        await evaluateAndTrade(market);
+      }
+    } catch (err) {
+      console.error("[trading] Error in trading tick:", err);
     }
   };
 
   await tick();
-  setInterval(tick, interval);
+  _tradingLoopTimer = setInterval(tick, interval);
+}
+
+/** Stop the trading loop gracefully. */
+export function stopTradingLoop(): void {
+  console.log("[trading] Stopping trading loop...");
+  _isRunning = false;
+  if (_tradingLoopTimer) {
+    clearInterval(_tradingLoopTimer);
+    _tradingLoopTimer = null;
+  }
+  console.log("[trading] Trading loop stopped");
+}
+
+/** Check if the trading loop is currently running. */
+export function isTradingLoopRunning(): boolean {
+  return _isRunning;
 }
