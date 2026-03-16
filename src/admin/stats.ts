@@ -27,6 +27,12 @@ export function getAllTrades(): TradeRecord[] {
   return getItem<TradeRecord[]>(TRADES_KEY) ?? [];
 }
 
+/** Return all open orders (trades with status OPEN). */
+export function getOpenOrders(): TradeRecord[] {
+  const trades = getAllTrades();
+  return trades.filter((t) => t.status === "OPEN");
+}
+
 /** Compute aggregate stats from stored trades. */
 export function getStats(): {
   totalTrades: number;

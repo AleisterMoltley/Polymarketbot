@@ -7,7 +7,8 @@ import { WebSocketServer, WebSocket } from "ws";
 import { loadStore } from "./utils/jsonStore";
 import adminRouter from "./admin/tabs";
 import { runTradingLoop } from "./bot/trading";
-import { getStats } from "./admin/stats";
+import { getStats, getOpenOrders } from "./admin/stats";
+import { getBalance } from "./utils/wallet";
 
 // ── Bootstrap ──────────────────────────────────────────────────────────────
 
@@ -26,6 +27,20 @@ app.use("/admin", adminRouter);
 // Simple liveness probe
 app.get("/health", (_req, res) => {
   res.json({ status: "ok", timestamp: new Date().toISOString() });
+});
+
+// Stats endpoint returning balance and open orders
+app.get("/stats", async (_req, res) => {
+  try {
+    const balance = await getBalance();
+    const openOrders = getOpenOrders();
+    res.json({ balance, openOrders });
+  } catch (error) {
+    // If balance fetch fails (e.g., no provider), return with null balance
+    console.error("[stats] Failed to fetch balance:", error);
+    const openOrders = getOpenOrders();
+    res.json({ balance: null, openOrders });
+  }
 });
 
 // ── HTTP + WebSocket server ────────────────────────────────────────────────
