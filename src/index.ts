@@ -42,10 +42,33 @@ import {
 
 // ── Bootstrap ──────────────────────────────────────────────────────────────
 
-loadStore();
-initTradingMode();
-initTradingHours();
-initMarketFilters();
+// Initialize JSON store with error handling
+const storeLoaded = loadStore();
+if (!storeLoaded) {
+  console.warn("[server] ⚠️ Store initialization had issues - check logs above");
+}
+
+// Initialize modules with error handling to prevent crash on startup
+try {
+  initTradingMode();
+} catch (err) {
+  console.error("[server] Failed to initialize trading mode:", err);
+  console.warn("[server] Using default trading mode settings");
+}
+
+try {
+  initTradingHours();
+} catch (err) {
+  console.error("[server] Failed to initialize trading hours:", err);
+  console.warn("[server] Using default trading hours settings");
+}
+
+try {
+  initMarketFilters();
+} catch (err) {
+  console.error("[server] Failed to initialize market filters:", err);
+  console.warn("[server] Using default market filter settings");
+}
 
 const PORT = parseInt(process.env.PORT ?? "3000", 10);
 const STATS_BROADCAST_INTERVAL = parseInt(process.env.STATS_BROADCAST_INTERVAL_MS ?? "10000", 10);
@@ -378,7 +401,7 @@ async function gracefulShutdown(signal: string): Promise<void> {
 
   console.log(`\n[server] Received ${signal}, starting graceful shutdown...`);
 
-  // Stop the trading loop
+  // Stop the trading loop first to prevent new trades
   console.log("[server] Stopping trading loop...");
   stopTradingLoop();
 
@@ -389,10 +412,15 @@ async function gracefulShutdown(signal: string): Promise<void> {
   // Stop stats broadcast
   stopStatsBroadcast();
 
-  // Flush stats to disk
-  console.log("[server] Flushing stats to disk...");
+  // Persist all state to disk
+  console.log("[server] Persisting stats and positions to disk...");
   flushStats();
-  saveStore();
+  const storeSaved = saveStore();
+  if (storeSaved) {
+    console.log("[server] ✅ All positions and state persisted successfully");
+  } else {
+    console.error("[server] ⚠️ Failed to persist state - data may be lost!");
+  }
 
   // Close WebSocket connections
   console.log("[server] Closing WebSocket connections...");
@@ -444,11 +472,40 @@ server.listen(PORT, () => {
 // Start auto-broadcast of stats
 startStatsBroadcast();
 
-// Start the trading loop (non-blocking)
-runTradingLoop().catch((err) => {
-  console.error("[bot] Trading loop crashed:", err);
-  gracefulShutdown("tradingLoopCrash");
-});
+// Counter for consecutive trading loop failures
+let tradingLoopFailures = 0;
+const MAX_TRADING_LOOP_FAILURES = 5;
+const TRADING_LOOP_RESTART_DELAY_MS = parseInt(process.env.TRADING_LOOP_RESTART_DELAY_MS ?? "30000", 10);
+
+/** Start the trading loop with automatic restart on failure */
+function startTradingLoopWithRestart(): void {
+  if (isShuttingDown) return;
+  
+  runTradingLoop()
+    .then(() => {
+      // Trading loop completed normally (shouldn't happen unless stopped)
+      tradingLoopFailures = 0;
+    })
+    .catch((err) => {
+      tradingLoopFailures++;
+      console.error(`[bot] Trading loop error (failure ${tradingLoopFailures}/${MAX_TRADING_LOOP_FAILURES}):`, err);
+      
+      if (tradingLoopFailures >= MAX_TRADING_LOOP_FAILURES) {
+        console.error("[bot] Too many consecutive trading loop failures, initiating shutdown...");
+        gracefulShutdown("tradingLoopMaxFailures");
+        return;
+      }
+      
+      // Attempt to restart after a delay
+      console.log(`[bot] Restarting trading loop in ${TRADING_LOOP_RESTART_DELAY_MS / 1000} seconds...`);
+      setTimeout(() => {
+        startTradingLoopWithRestart();
+      }, TRADING_LOOP_RESTART_DELAY_MS);
+    });
+}
+
+// Start the trading loop with automatic restart capability
+startTradingLoopWithRestart();
 
 // Start speed trading if enabled via environment variable
 const ENABLE_SPEED_TRADING = process.env.ENABLE_SPEED_TRADING === "true";
