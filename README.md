@@ -45,6 +45,13 @@ npm run dev                 # start with ts-node
 
 Open [http://localhost:3000/admin](http://localhost:3000/admin) for the admin dashboard.
 
+## Platform-Specific Setup Guides
+
+For detailed step-by-step installation instructions:
+
+- **macOS**: [docs/MacSetup.md](docs/MacSetup.md)
+- **Windows**: [docs/WindowsSetup.md](docs/WindowsSetup.md)
+
 ## Project Structure
 
 ```
