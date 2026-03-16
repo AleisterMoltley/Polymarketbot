@@ -10,6 +10,9 @@ dist/
 # Data directory (persistent store)
 data/
 
+# Sample/temporary trade data
+paper-trade-history.json
+
 # Logs
 *.log
 logs/
