@@ -19,6 +19,10 @@ import type { TradeRecord } from "../admin/stats";
 const MIN_VALID_PRICE_SUM = 0.9;  // Minimum valid sum (allows for spread/slippage)
 const MAX_VALID_PRICE_SUM = 1.2;  // Maximum valid sum (allows for market maker vig)
 
+// Liquidity Score Constants for edge weighting
+const MIN_LIQUIDITY_SCORE = 0.1;  // Minimum liquidity score to avoid extreme downscaling
+const MAX_LIQUIDITY_SCORE = 2.0;  // Maximum liquidity score cap
+
 let _tradeIdCounter = 0;
 function newId(): string {
   return `trade-${Date.now()}-${++_tradeIdCounter}`;
@@ -94,6 +98,34 @@ function transformMarket(raw: RawMarket): ExtendedMarket | null {
   return null;
 }
 
+/**
+ * Calculate liquidity score for edge weighting.
+ * Higher liquidity markets get higher scores, making their edge more reliable.
+ * 
+ * Formula: liquidityScore = sqrt(liquidity / referenceUsdc)
+ * - Uses square root to dampen the effect (avoid extreme values)
+ * - Clamped between MIN_LIQUIDITY_SCORE and MAX_LIQUIDITY_SCORE
+ * 
+ * Examples (with referenceUsdc = 10000):
+ * - $1,000 liquidity → score ~0.316
+ * - $10,000 liquidity → score = 1.0
+ * - $40,000 liquidity → score = 2.0 (capped)
+ */
+function calculateLiquidityScore(liquidity: number | undefined): number {
+  const referenceUsdc = config.trading.liquidityReferenceUsdc;
+  
+  // If no liquidity data, return minimum score (conservative)
+  if (liquidity === undefined || liquidity <= 0) {
+    return MIN_LIQUIDITY_SCORE;
+  }
+  
+  // Calculate score using square root to dampen extreme values
+  const rawScore = Math.sqrt(liquidity / referenceUsdc);
+  
+  // Clamp to valid range
+  return Math.min(MAX_LIQUIDITY_SCORE, Math.max(MIN_LIQUIDITY_SCORE, rawScore));
+}
+
 /** Fetch a list of active markets from the Polymarket CLOB API with optional filtering. */
 export async function fetchMarkets(): Promise<ExtendedMarket[]> {
   const baseUrl = config.polymarket.clobApiUrl;
@@ -153,6 +185,11 @@ export async function fetchMarkets(): Promise<ExtendedMarket[]> {
  *   gives better expected value than the market implies
  * - We validate BOTH outcomes to ensure we're not detecting false edges
  *   (e.g., Yes=0.95, No=0.05 is a fairly priced market, not an edge)
+ * 
+ * Liquidity-Weighted Edge (when enabled):
+ * - Raw edge is multiplied by a liquidity score
+ * - Higher liquidity markets produce higher weighted edges
+ * - This favors trading in more liquid markets where edge is more reliable
  */
 export async function evaluateAndTrade(market: ExtendedMarket): Promise<void> {
   // Check trading hours restriction
@@ -163,6 +200,7 @@ export async function evaluateAndTrade(market: ExtendedMarket): Promise<void> {
 
   const minEdge = config.trading.minEdge;
   const maxSize = config.trading.maxPositionSizeUsdc;
+  const useLiquidityWeighting = config.trading.enableLiquidityWeightedEdge;
   // Use dynamic trading mode from dashboard
   const isPaper = isPaperMode();
 
@@ -182,6 +220,11 @@ export async function evaluateAndTrade(market: ExtendedMarket): Promise<void> {
     return;
   }
 
+  // Calculate liquidity score for edge weighting (if enabled)
+  const liquidityScore = useLiquidityWeighting 
+    ? calculateLiquidityScore(market.liquidity) 
+    : 1.0;
+
   for (let i = 0; i < market.outcomes.length; i++) {
     const price = market.prices[i];
     if (price === undefined || price <= 0 || price >= 1) continue;
@@ -197,7 +240,7 @@ export async function evaluateAndTrade(market: ExtendedMarket): Promise<void> {
     // For binary markets, calculate edge based on market inefficiency
     // Edge exists when: complementary price (1 - price) significantly differs from actual other outcome price
     // This ensures we check BOTH outcomes together
-    let edge = 0;
+    let rawEdge = 0;
     
     if (market.outcomes.length === 2) {
       // Get the complementary outcome's price
@@ -213,16 +256,24 @@ export async function evaluateAndTrade(market: ExtendedMarket): Promise<void> {
       // This prevents false positives like Yes=0.95, No=0.05 where:
       // - For Yes: implied fair = 1 - 0.05 = 0.95, edge = 0.95 - 0.95 - 0.05 = -0.05 (no edge)
       // - For No: implied fair = 1 - 0.95 = 0.05, edge = 0.05 - 0.05 - 0.05 = -0.05 (no edge)
-      edge = impliedFairPrice - price - minEdge;
+      rawEdge = impliedFairPrice - price - minEdge;
     } else {
       // For multi-outcome markets (3+ outcomes), use simple edge model.
       // The binary market logic doesn't apply because there's no single complementary price.
       // A more sophisticated model for multi-outcome markets would require comparing against
       // the sum of all complementary outcomes, but this is left for future enhancement.
-      edge = 1 - price - minEdge;
+      rawEdge = 1 - price - minEdge;
     }
     
-    if (edge <= 0) continue;
+    if (rawEdge <= 0) continue;
+
+    // Apply liquidity weighting: weighted_edge = raw_edge * liquidity_score
+    // This makes edge from high-liquidity markets more valuable
+    const edge = rawEdge * liquidityScore;
+    
+    if (useLiquidityWeighting) {
+      console.log(`[trading] Edge calculation: raw=${rawEdge.toFixed(4)}, liquidityScore=${liquidityScore.toFixed(3)}, weighted=${edge.toFixed(4)}`);
+    }
 
     // Round to 2 decimal places (cents) for USDC sizing
     const CENTS = 100;
