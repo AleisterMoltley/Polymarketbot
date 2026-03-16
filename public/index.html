@@ -247,6 +247,144 @@
       background: #6e7681;
       color: #fff;
     }
+    
+    /* Market Filters Styles */
+    .filters-grid {
+      display: grid;
+      grid-template-columns: repeat(auto-fit, minmax(280px, 1fr));
+      gap: 16px;
+    }
+    .filter-group {
+      background: #0d1117;
+      border-radius: 6px;
+      padding: 16px;
+    }
+    .filter-group h3 {
+      font-size: 0.9rem;
+      color: #e6edf3;
+      margin-bottom: 12px;
+      display: flex;
+      align-items: center;
+      gap: 8px;
+    }
+    .filter-group h3 .icon {
+      font-size: 1rem;
+    }
+    .filter-row {
+      display: flex;
+      align-items: center;
+      gap: 12px;
+      margin-bottom: 12px;
+    }
+    .filter-row:last-child {
+      margin-bottom: 0;
+    }
+    .filter-row label {
+      font-size: 0.85rem;
+      color: #8b949e;
+      min-width: 100px;
+    }
+    .filter-row input[type="number"],
+    .filter-row input[type="text"] {
+      flex: 1;
+      background: #161b22;
+      border: 1px solid #30363d;
+      border-radius: 4px;
+      padding: 8px 12px;
+      color: #e6edf3;
+      font-size: 0.85rem;
+    }
+    .filter-row input:focus {
+      border-color: #58a6ff;
+      outline: none;
+    }
+    .filter-row input::placeholder {
+      color: #484f58;
+    }
+    .filter-toggle {
+      position: relative;
+      width: 40px;
+      height: 20px;
+      background: #21262d;
+      border-radius: 10px;
+      cursor: pointer;
+      border: 1px solid #30363d;
+      transition: all 0.3s ease;
+    }
+    .filter-toggle.active {
+      background: #238636;
+      border-color: #238636;
+    }
+    .filter-toggle .slider {
+      position: absolute;
+      top: 2px;
+      left: 2px;
+      width: 14px;
+      height: 14px;
+      background: #8b949e;
+      border-radius: 50%;
+      transition: all 0.3s ease;
+    }
+    .filter-toggle.active .slider {
+      left: calc(100% - 16px);
+      background: #fff;
+    }
+    .filter-stats {
+      margin-top: 16px;
+      padding: 12px;
+      background: #0d1117;
+      border-radius: 6px;
+      font-size: 0.8rem;
+      color: #8b949e;
+    }
+    .filter-stats .stat-row {
+      display: flex;
+      justify-content: space-between;
+      margin-bottom: 4px;
+    }
+    .filter-stats .stat-row:last-child {
+      margin-bottom: 0;
+    }
+    .filter-stats .stat-value {
+      color: #58a6ff;
+    }
+    .filter-actions {
+      display: flex;
+      gap: 12px;
+      margin-top: 16px;
+    }
+    .btn-filter {
+      padding: 8px 16px;
+      border-radius: 6px;
+      border: 1px solid #30363d;
+      background: #21262d;
+      color: #c9d1d9;
+      font-size: 0.85rem;
+      cursor: pointer;
+      transition: all 0.2s ease;
+    }
+    .btn-filter:hover {
+      background: #30363d;
+      border-color: #484f58;
+    }
+    .btn-filter.primary {
+      background: #238636;
+      border-color: #238636;
+      color: #fff;
+    }
+    .btn-filter.primary:hover {
+      background: #2ea043;
+      border-color: #2ea043;
+    }
+    .btn-filter.danger {
+      background: #21262d;
+      border-color: #da3633;
+      color: #da3633;
+    }
+    .btn-filter.danger:hover {
+      background: #da3633;
+      color: #fff;
+    }
   </style>
 </head>
 <body>
@@ -286,6 +424,7 @@
 
   <nav>
     <button class="active" onclick="showTab('dashboard', this)">Dashboard</button>
+    <button onclick="showTab('filters', this)">Filters</button>
     <button onclick="showTab('trades', this)">Trades</button>
     <button onclick="showTab('store', this)">Store</button>
   </nav>
@@ -301,6 +440,88 @@
           <div class="stat"><div class="value" id="stat-pnl">—</div><div class="label">Total PnL (USDC)</div></div>
           <div class="stat"><div class="value" id="stat-paper">—</div><div class="label">Paper Trades</div></div>
           <div class="stat"><div class="value" id="stat-live">—</div><div class="label">Live Trades</div></div>
+        </div>
+      </div>
+    </div>
+
+    <!-- Filters tab -->
+    <div id="tab-filters" class="tab">
+      <div class="card">
+        <h2>Market Filters</h2>
+        <p style="color:#8b949e;margin-bottom:16px;font-size:0.85rem;">
+          Configure filters to focus on liquid markets with high trading activity.
+          Changes are applied immediately to the next market fetch.
+        </p>
+        
+        <div class="filters-grid">
+          <!-- Liquidity & Volume Filters -->
+          <div class="filter-group">
+            <h3><span class="icon">💧</span> Liquidity & Volume</h3>
+            <div class="filter-row">
+              <label for="filter-liquidity">Min Liquidity (USDC)</label>
+              <input type="number" id="filter-liquidity" placeholder="0 = no filter" min="0" step="100" aria-describedby="liquidity-help">
+            </div>
+            <div class="filter-row">
+              <label for="filter-volume">Min Volume (USDC)</label>
+              <input type="number" id="filter-volume" placeholder="0 = no filter" min="0" step="100" aria-describedby="volume-help">
+            </div>
+          </div>
+          
+          <!-- Category Filters -->
+          <div class="filter-group">
+            <h3><span class="icon">🏷️</span> Categories</h3>
+            <div class="filter-row">
+              <label for="filter-categories">Include Only</label>
+              <input type="text" id="filter-categories" placeholder="e.g., politics, crypto">
+            </div>
+            <div class="filter-row">
+              <label for="filter-exclude-categories">Exclude</label>
+              <input type="text" id="filter-exclude-categories" placeholder="e.g., sports, entertainment">
+            </div>
+          </div>
+          
+          <!-- Pagination -->
+          <div class="filter-group">
+            <h3><span class="icon">📄</span> Pagination</h3>
+            <div class="filter-row">
+              <label for="filter-pagesize">Page Size</label>
+              <input type="number" id="filter-pagesize" placeholder="100" min="1" max="1000" step="10">
+            </div>
+            <div class="filter-row">
+              <label for="filter-enabled-toggle">Filters Enabled</label>
+              <div class="filter-toggle" 
+                   id="filter-enabled-toggle" 
+                   role="switch" 
+                   tabindex="0"
+                   aria-checked="true"
+                   onclick="toggleFiltersEnabled()"
+                   onkeydown="if(event.key === 'Enter' || event.key === ' ') { event.preventDefault(); toggleFiltersEnabled(); }">
+                <div class="slider"></div>
+              </div>
+            </div>
+          </div>
+        </div>
+        
+        <!-- Filter Statistics -->
+        <div class="filter-stats" id="filter-stats">
+          <div class="stat-row">
+            <span>Last filter result:</span>
+            <span class="stat-value" id="filter-stat-result">—</span>
+          </div>
+          <div class="stat-row">
+            <span>Markets filtered:</span>
+            <span class="stat-value" id="filter-stat-filtered">—</span>
+          </div>
+          <div class="stat-row">
+            <span>Active filters:</span>
+            <span class="stat-value" id="filter-stat-active">—</span>
+          </div>
+        </div>
+        
+        <!-- Action Buttons -->
+        <div class="filter-actions">
+          <button class="btn-filter primary" onclick="saveFilters()">💾 Save Filters</button>
+          <button class="btn-filter danger" onclick="resetFilters()">🔄 Reset to Defaults</button>
         </div>
       </div>
     </div>
@@ -464,6 +685,119 @@
       btn.classList.add('active');
       if (name === 'trades') loadTrades();
       if (name === 'store') loadStore();
+      if (name === 'filters') loadFilters();
+    }
+
+    // ── Market Filters State ──────────────────────────────────────────────
+    let filterState = { config: {}, lastFilterResult: null };
+
+    function updateFiltersUI(state) {
+      filterState = state;
+      const config = state.config || {};
+      
+      // Update input fields
+      document.getElementById('filter-liquidity').value = config.minLiquidity || '';
+      document.getElementById('filter-volume').value = config.minVolume || '';
+      document.getElementById('filter-categories').value = (config.categories || []).join(', ');
+      document.getElementById('filter-exclude-categories').value = (config.excludeCategories || []).join(', ');
+      document.getElementById('filter-pagesize').value = config.pageSize || 100;
+      
+      // Update enabled toggle
+      const toggle = document.getElementById('filter-enabled-toggle');
+      if (config.enabled) {
+        toggle.classList.add('active');
+        toggle.setAttribute('aria-checked', 'true');
+      } else {
+        toggle.classList.remove('active');
+        toggle.setAttribute('aria-checked', 'false');
+      }
+      
+      // Update statistics
+      const lastResult = state.lastFilterResult;
+      if (lastResult) {
+        document.getElementById('filter-stat-result').textContent = 
+          `${lastResult.totalBefore} → ${lastResult.totalAfter}`;
+        document.getElementById('filter-stat-filtered').textContent = 
+          `${lastResult.filtered} (${lastResult.filterRate})`;
+        document.getElementById('filter-stat-active').textContent = 
+          lastResult.filtersApplied.join(', ') || 'none';
+      } else {
+        document.getElementById('filter-stat-result').textContent = '—';
+        document.getElementById('filter-stat-filtered').textContent = '—';
+        document.getElementById('filter-stat-active').textContent = '—';
+      }
+    }
+
+    function toggleFiltersEnabled() {
+      const toggle = document.getElementById('filter-enabled-toggle');
+      toggle.classList.toggle('active');
+      // Update ARIA attribute for accessibility
+      const isEnabled = toggle.classList.contains('active');
+      toggle.setAttribute('aria-checked', isEnabled ? 'true' : 'false');
+    }
+
+    async function saveFilters() {
+      const config = {
+        minLiquidity: parseFloat(document.getElementById('filter-liquidity').value) || 0,
+        minVolume: parseFloat(document.getElementById('filter-volume').value) || 0,
+        categories: document.getElementById('filter-categories').value
+          .split(',').map(s => s.trim()).filter(Boolean),
+        excludeCategories: document.getElementById('filter-exclude-categories').value
+          .split(',').map(s => s.trim()).filter(Boolean),
+        pageSize: parseInt(document.getElementById('filter-pagesize').value) || 100,
+        enabled: document.getElementById('filter-enabled-toggle').classList.contains('active')
+      };
+
+      try {
+        const res = await fetch('/api/market-filters', {
+          method: 'POST',
+          headers: { 'Content-Type': 'application/json' },
+          body: JSON.stringify(config)
+        });
+        const data = await res.json();
+        if (data.success) {
+          console.log('Filters saved:', data.config);
+          alert('✅ Market filters saved successfully!');
+        } else {
+          console.error('Failed to save filters:', data.error);
+          alert('❌ Failed to save filters: ' + data.error);
+        }
+      } catch (err) {
+        console.error('Error saving filters:', err);
+        alert('❌ Error saving filters. Check console for details.');
+      }
+    }
+
+    async function resetFilters() {
+      if (!confirm('Reset all filters to default values?')) return;
+      
+      try {
+        const res = await fetch('/api/market-filters/reset', {
+          method: 'POST',
+          headers: { 'Content-Type': 'application/json' }
+        });
+        const data = await res.json();
+        if (data.success) {
+          console.log('Filters reset:', data.config);
+          alert('✅ Filters reset to defaults!');
+        } else {
+          console.error('Failed to reset filters:', data.error);
+          alert('❌ Failed to reset filters: ' + data.error);
+        }
+      } catch (err) {
+        console.error('Error resetting filters:', err);
+        alert('❌ Error resetting filters. Check console for details.');
+      }
+    }
+
+    async function loadFilters() {
+      try {
+        const res = await fetch('/api/market-filters');
+        const data = await res.json();
+        updateFiltersUI(data);
+      } catch (err) {
+        console.error('Failed to load filters:', err);
+      }
     }
 
     // ── WebSocket for live stats ──────────────────────────────────────────
@@ -475,6 +809,7 @@
         if (event === 'stats') renderStats(payload);
         if (event === 'tradingMode') updateModeUI(payload.mode);
         if (event === 'tradingHours') updateTradingHoursUI(payload);
+        if (event === 'marketFilters') updateFiltersUI(payload);
       } catch {}
     });
     setInterval(() => { if (ws.readyState === 1) ws.send(JSON.stringify({ command: 'stats' })); }, 10000);
@@ -522,6 +857,7 @@
     // ── Initialize ────────────────────────────────────────────────────────
     loadTradingMode();
     loadTradingHours();
+    loadFilters();
   </script>
 </body>
 </html>
