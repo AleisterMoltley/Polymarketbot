@@ -1,37 +1,28 @@
 # Optimized Dockerfile for Polymarket Trading Bot
-# Multi-stage build for faster image builds and smaller final image
+# Multi-stage build for lightweight 5-min trading bot
 
-# Stage 1: Install dependencies
-FROM node:18-alpine AS deps
+# Stage 1: Install all dependencies and build TypeScript
+FROM node:22-alpine AS builder
 WORKDIR /app
-# Install only production dependencies first (better caching)
 COPY package*.json ./
-RUN npm ci --only=production && \
-    cp -R node_modules prod_node_modules && \
-    npm ci
-
-# Stage 2: Build TypeScript
-FROM node:18-alpine AS builder
-WORKDIR /app
-COPY --from=deps /app/node_modules ./node_modules
-COPY . .
+RUN npm ci
+COPY tsconfig.json ./
+COPY src ./src
 RUN npm run build
 
-# Stage 3: Production image
-FROM node:18-alpine AS runner
+# Stage 2: Lightweight production image
+FROM node:22-alpine AS runner
 WORKDIR /app
 
 # Create non-root user for security
 RUN addgroup --system --gid 1001 nodejs && \
     adduser --system --uid 1001 botuser
 
-# Copy only what's needed for production
-COPY --from=deps /app/prod_node_modules ./node_modules
+# Copy only essential files for 5-min trading bot
+COPY package*.json ./
+RUN npm ci --omit=dev
 COPY --from=builder /app/dist ./dist
-COPY --from=builder /app/public ./public
-COPY --from=builder /app/wallet.js ./wallet.js
-COPY --from=builder /app/ok.js ./ok.js
-COPY package.json ./
+COPY ok.js ./
 
 # Create data directory with correct permissions
 RUN mkdir -p /app/data && chown -R botuser:nodejs /app
@@ -42,8 +33,8 @@ USER botuser
 # Expose port
 EXPOSE 3000
 
-# Health check for container orchestration
-HEALTHCHECK --interval=30s --timeout=10s --start-period=5s --retries=3 \
+# Health check aligned with 5-minute trading interval
+HEALTHCHECK --interval=5m --timeout=10s --start-period=10s --retries=3 \
     CMD node ok.js || exit 1
 
 # Environment variables optimized for 5-minute interval trading
