@@ -9,26 +9,43 @@ interface Store {
 
 let memoryStore: Store = {};
 
-/** Load persisted store from disk into memory. */
-export function loadStore(name = "store"): void {
+/** Load persisted store from disk into memory. 
+ *  Returns true if store was loaded successfully, false otherwise.
+ */
+export function loadStore(name = "store"): boolean {
   const filePath = path.join(DATA_DIR, `${name}.json`);
   if (fs.existsSync(filePath)) {
     try {
       const raw = fs.readFileSync(filePath, "utf-8");
       memoryStore = JSON.parse(raw) as Store;
-    } catch {
+      console.log(`[jsonStore] Loaded store from ${filePath}`);
+      return true;
+    } catch (err) {
+      console.error(`[jsonStore] Failed to load store from ${filePath}:`, err);
+      console.warn("[jsonStore] Starting with empty store - previous state may be lost!");
       memoryStore = {};
+      return false;
     }
   }
+  console.log(`[jsonStore] No existing store found at ${filePath}, starting fresh`);
+  return true;
 }
 
-/** Persist current in-memory store to disk. */
-export function saveStore(name = "store"): void {
-  if (!fs.existsSync(DATA_DIR)) {
-    fs.mkdirSync(DATA_DIR, { recursive: true });
+/** Persist current in-memory store to disk.
+ *  Returns true if store was saved successfully, false otherwise.
+ */
+export function saveStore(name = "store"): boolean {
+  try {
+    if (!fs.existsSync(DATA_DIR)) {
+      fs.mkdirSync(DATA_DIR, { recursive: true });
+    }
+    const filePath = path.join(DATA_DIR, `${name}.json`);
+    fs.writeFileSync(filePath, JSON.stringify(memoryStore, null, 2), "utf-8");
+    return true;
+  } catch (err) {
+    console.error(`[jsonStore] Failed to save store:`, err);
+    return false;
   }
-  const filePath = path.join(DATA_DIR, `${name}.json`);
-  fs.writeFileSync(filePath, JSON.stringify(memoryStore, null, 2), "utf-8");
 }
 
 /** Get a value from the in-memory store. */
