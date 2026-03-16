@@ -78,3 +78,7 @@ Copy `.env.example` to `.env` and fill in:
 - `MAX_POSITION_SIZE_USDC=100` — maximum simulated position size per trade
 
 See [docs/Architecture.md](docs/Architecture.md) for all variables.
+
+## Upgrade Notes
+
+- Updated to Express 5.x; verify middleware and routing for compatibility in src/admin/ and other routes.
