@@ -458,12 +458,12 @@
           <div class="filter-group">
             <h3><span class="icon">💧</span> Liquidity & Volume</h3>
             <div class="filter-row">
-              <label>Min Liquidity (USDC)</label>
-              <input type="number" id="filter-liquidity" placeholder="0 = no filter" min="0" step="100">
+              <label for="filter-liquidity">Min Liquidity (USDC)</label>
+              <input type="number" id="filter-liquidity" placeholder="0 = no filter" min="0" step="100" aria-describedby="liquidity-help">
             </div>
             <div class="filter-row">
-              <label>Min Volume (USDC)</label>
-              <input type="number" id="filter-volume" placeholder="0 = no filter" min="0" step="100">
+              <label for="filter-volume">Min Volume (USDC)</label>
+              <input type="number" id="filter-volume" placeholder="0 = no filter" min="0" step="100" aria-describedby="volume-help">
             </div>
           </div>
           
@@ -471,11 +471,11 @@
           <div class="filter-group">
             <h3><span class="icon">🏷️</span> Categories</h3>
             <div class="filter-row">
-              <label>Include Only</label>
+              <label for="filter-categories">Include Only</label>
               <input type="text" id="filter-categories" placeholder="e.g., politics, crypto">
             </div>
             <div class="filter-row">
-              <label>Exclude</label>
+              <label for="filter-exclude-categories">Exclude</label>
               <input type="text" id="filter-exclude-categories" placeholder="e.g., sports, entertainment">
             </div>
           </div>
@@ -484,12 +484,18 @@
           <div class="filter-group">
             <h3><span class="icon">📄</span> Pagination</h3>
             <div class="filter-row">
-              <label>Page Size</label>
+              <label for="filter-pagesize">Page Size</label>
               <input type="number" id="filter-pagesize" placeholder="100" min="1" max="1000" step="10">
             </div>
             <div class="filter-row">
-              <label>Filters Enabled</label>
-              <div class="filter-toggle" id="filter-enabled-toggle" onclick="toggleFiltersEnabled()">
+              <label for="filter-enabled-toggle">Filters Enabled</label>
+              <div class="filter-toggle" 
+                   id="filter-enabled-toggle" 
+                   role="switch" 
+                   tabindex="0"
+                   aria-checked="true"
+                   onclick="toggleFiltersEnabled()"
+                   onkeydown="if(event.key === 'Enter' || event.key === ' ') { event.preventDefault(); toggleFiltersEnabled(); }">
                 <div class="slider"></div>
               </div>
             </div>
@@ -700,8 +706,10 @@
       const toggle = document.getElementById('filter-enabled-toggle');
       if (config.enabled) {
         toggle.classList.add('active');
+        toggle.setAttribute('aria-checked', 'true');
       } else {
         toggle.classList.remove('active');
+        toggle.setAttribute('aria-checked', 'false');
       }
       
       // Update statistics
@@ -723,6 +731,9 @@
     function toggleFiltersEnabled() {
       const toggle = document.getElementById('filter-enabled-toggle');
       toggle.classList.toggle('active');
+      // Update ARIA attribute for accessibility
+      const isEnabled = toggle.classList.contains('active');
+      toggle.setAttribute('aria-checked', isEnabled ? 'true' : 'false');
     }
 
     async function saveFilters() {

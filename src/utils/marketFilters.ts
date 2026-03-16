@@ -66,7 +66,11 @@ const DEFAULT_FILTER_CONFIG: MarketFilterConfig = {
   enabled: true,
 };
 
+// ── Store Keys & Limits ────────────────────────────────────────────────────
+
 const FILTER_CONFIG_KEY = "marketFilterConfig";
+const MAX_PAGE_SIZE = 1000;
+const MIN_PAGE_SIZE = 1;
 
 // ── Configuration Management ───────────────────────────────────────────────
 
@@ -116,8 +120,8 @@ export function setFilterConfig(
   if (updates.minVolume !== undefined && updates.minVolume < 0) {
     throw new Error("minVolume cannot be negative");
   }
-  if (updates.pageSize !== undefined && (updates.pageSize < 1 || updates.pageSize > 1000)) {
-    throw new Error("pageSize must be between 1 and 1000");
+  if (updates.pageSize !== undefined && (updates.pageSize < MIN_PAGE_SIZE || updates.pageSize > MAX_PAGE_SIZE)) {
+    throw new Error(`pageSize must be between ${MIN_PAGE_SIZE} and ${MAX_PAGE_SIZE}`);
   }
   
   _filterConfig = { ..._filterConfig, ...updates };

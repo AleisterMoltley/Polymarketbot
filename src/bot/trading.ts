@@ -64,10 +64,8 @@ export async function fetchMarkets(): Promise<ExtendedMarket[]> {
       closed: false,
     };
     
-    // Add pagination parameter if supported by API
-    if (filterConfig.pageSize > 0) {
-      params.limit = filterConfig.pageSize;
-    }
+    // Add pagination parameter (pageSize is always positive due to validation)
+    params.limit = filterConfig.pageSize;
     
     const { data } = await axios.get<{ data: ExtendedMarket[] }>(`${baseUrl}/markets`, {
       params,
