@@ -12,6 +12,12 @@ import {
 } from "../utils/marketFilters";
 import type { TradeRecord } from "../admin/stats";
 
+// ── Edge Detection Constants ────────────────────────────────────────────────
+// For binary markets, the sum of Yes and No prices should be approximately 1.
+// These constants define the valid range for price sum validation.
+const MIN_VALID_PRICE_SUM = 0.9;  // Minimum valid sum (allows for spread/slippage)
+const MAX_VALID_PRICE_SUM = 1.2;  // Maximum valid sum (allows for market maker vig)
+
 let _tradeIdCounter = 0;
 function newId(): string {
   return `trade-${Date.now()}-${++_tradeIdCounter}`;
@@ -94,6 +100,14 @@ export async function fetchMarkets(): Promise<ExtendedMarket[]> {
  * Supports both paper and live trading modes, controlled via dashboard.
  * Includes position tracking to prevent duplicate orders.
  * Respects trading hours restriction when enabled.
+ * 
+ * Edge Detection Logic:
+ * For binary markets (Yes/No), we check if there's actual market inefficiency:
+ * - If Yes + No > 1 + MIN_EDGE, there may be an edge on the underpriced outcome
+ * - An outcome is only considered to have edge if buying it at current price
+ *   gives better expected value than the market implies
+ * - We validate BOTH outcomes to ensure we're not detecting false edges
+ *   (e.g., Yes=0.95, No=0.05 is a fairly priced market, not an edge)
  */
 export async function evaluateAndTrade(market: ExtendedMarket): Promise<void> {
   // Check trading hours restriction
@@ -107,9 +121,19 @@ export async function evaluateAndTrade(market: ExtendedMarket): Promise<void> {
   // Use dynamic trading mode from dashboard
   const isPaper = isPaperMode();
 
+  // For binary markets (Yes/No), validate both outcomes together
+  // Sum of prices should be approximately 1 (with some spread for market maker)
+  const priceSum = market.prices.reduce((sum, p) => sum + (p ?? 0), 0);
+  
+  // Skip if price sum is invalid (should be roughly 1 for binary markets)
+  if (market.outcomes.length === 2 && (priceSum < MIN_VALID_PRICE_SUM || priceSum > MAX_VALID_PRICE_SUM)) {
+    console.log(`[trading] Skipping market ${market.conditionId}: invalid price sum ${priceSum.toFixed(3)}`);
+    return;
+  }
+
   for (let i = 0; i < market.outcomes.length; i++) {
     const price = market.prices[i];
-    if (price === undefined) continue;
+    if (price === undefined || price <= 0 || price >= 1) continue;
 
     const outcome = market.outcomes[i];
 
@@ -119,8 +143,34 @@ export async function evaluateAndTrade(market: ExtendedMarket): Promise<void> {
       continue;
     }
 
-    // Simple edge model: buy if implied probability is below (1 - MIN_EDGE)
-    const edge = 1 - price - minEdge;
+    // For binary markets, calculate edge based on market inefficiency
+    // Edge exists when: complementary price (1 - price) significantly differs from actual other outcome price
+    // This ensures we check BOTH outcomes together
+    let edge = 0;
+    
+    if (market.outcomes.length === 2) {
+      // Get the complementary outcome's price
+      const complementaryPrice = market.prices[1 - i] ?? 0;
+      
+      // Fair price for this outcome based on complementary outcome: 1 - complementaryPrice
+      // Actual price we'd pay: price
+      // Edge = fair_price - actual_price - minEdge
+      // This means we buy when our price is cheaper than what the other side implies
+      const impliedFairPrice = 1 - complementaryPrice;
+      
+      // Only count as edge if our price is LOWER than implied fair price by at least MIN_EDGE
+      // This prevents false positives like Yes=0.95, No=0.05 where:
+      // - For Yes: implied fair = 1 - 0.05 = 0.95, edge = 0.95 - 0.95 - 0.05 = -0.05 (no edge)
+      // - For No: implied fair = 1 - 0.95 = 0.05, edge = 0.05 - 0.05 - 0.05 = -0.05 (no edge)
+      edge = impliedFairPrice - price - minEdge;
+    } else {
+      // For multi-outcome markets (3+ outcomes), use simple edge model.
+      // The binary market logic doesn't apply because there's no single complementary price.
+      // A more sophisticated model for multi-outcome markets would require comparing against
+      // the sum of all complementary outcomes, but this is left for future enhancement.
+      edge = 1 - price - minEdge;
+    }
+    
     if (edge <= 0) continue;
 
     // Round to 2 decimal places (cents) for USDC sizing
