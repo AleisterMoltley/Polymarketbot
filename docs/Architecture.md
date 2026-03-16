@@ -36,7 +36,7 @@ Polymarketbot is a TypeScript trading bot for [Polymarket](https://polymarket.co
 ├── ok.js          Health-check script (Docker HEALTHCHECK)
 ├── Dockerfile     Multi-stage container build
 ├── .env.example   All supported environment variables
-└── tsconfig.json  TypeScript config (target: es2020, module: commonjs)
+└── tsconfig.json  TypeScript config (target: es2022, module: commonjs)
 ```
 
 ---
