@@ -6,6 +6,10 @@ const router = Router();
 
 const ADMIN_SECRET = process.env.ADMIN_SECRET;
 
+// Pagination defaults
+const DEFAULT_PAGE_LIMIT = 50;
+const MAX_PAGE_LIMIT = 100;
+
 /** Authentication middleware for admin routes */
 function authMiddleware(req: Request, res: Response, next: NextFunction): void {
   // Skip auth for the main dashboard page (HTML shell)
@@ -74,7 +78,7 @@ router.get("/stats", (_req: Request, res: Response) => {
 router.get("/trades", (req: Request, res: Response) => {
   const trades = getAllTrades();
   const page = Math.max(1, parseInt(req.query.page as string, 10) || 1);
-  const limit = Math.min(100, Math.max(1, parseInt(req.query.limit as string, 10) || 50));
+  const limit = Math.min(MAX_PAGE_LIMIT, Math.max(1, parseInt(req.query.limit as string, 10) || DEFAULT_PAGE_LIMIT));
   const start = (page - 1) * limit;
   const end = start + limit;
   const paginated = trades.slice(start, end);

@@ -35,6 +35,7 @@ const PARASWAP_API = "https://apiv5.paraswap.io";
 // Default configuration
 const DEFAULT_MAX_SLIPPAGE = 0.02; // 2%
 const DEFAULT_MAX_PRICE_IMPACT = 0.05; // 5%
+const BASIS_POINTS_DIVISOR = 10000;
 
 /**
  * Fetch a swap quote from Paraswap for the given token pair and amount.
@@ -135,8 +136,8 @@ export async function executeSwap(
 
   // Calculate minimum amount out with slippage tolerance
   const destAmount = BigInt(priceData.priceRoute.destAmount);
-  const slippageBps = BigInt(Math.floor(maxSlippage * 10000));
-  const minDestAmount = destAmount - (destAmount * slippageBps) / BigInt(10000);
+  const slippageBps = BigInt(Math.floor(maxSlippage * BASIS_POINTS_DIVISOR));
+  const minDestAmount = destAmount - (destAmount * slippageBps) / BigInt(BASIS_POINTS_DIVISOR);
 
   console.log(
     `[swaps] Min output: ${ethers.formatUnits(minDestAmount, destDecimals)} ${tokenOut} (with ${(maxSlippage * 100).toFixed(1)}% slippage tolerance)`
@@ -152,7 +153,7 @@ export async function executeSwap(
       priceRoute: priceData.priceRoute,
       userAddress: wallet.address,
       partner: "polymarketbot",
-      slippage: Math.floor(maxSlippage * 10000), // Slippage in basis points
+      slippage: Math.floor(maxSlippage * BASIS_POINTS_DIVISOR), // Slippage in basis points
     },
     { timeout: 10_000 }
   );

@@ -15,6 +15,7 @@ loadStore();
 
 const PORT = parseInt(process.env.PORT ?? "3000", 10);
 const STATS_BROADCAST_INTERVAL = parseInt(process.env.STATS_BROADCAST_INTERVAL_MS ?? "10000", 10);
+const SHUTDOWN_TIMEOUT_MS = 10000; // Force shutdown after 10 seconds
 
 const app = express();
 app.use(express.json());
@@ -140,7 +141,7 @@ async function gracefulShutdown(signal: string): Promise<void> {
   setTimeout(() => {
     console.error("[server] Forced shutdown after timeout");
     process.exit(1);
-  }, 10000);
+  }, SHUTDOWN_TIMEOUT_MS);
 }
 
 // Register signal handlers
