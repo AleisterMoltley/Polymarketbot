@@ -58,13 +58,14 @@ export async function fetchMarkets(): Promise<Market[]> {
 
 /**
  * Evaluate a market and return a trade signal if edge exceeds MIN_EDGE.
- * In paper-trade mode no real order is sent.
- * Includes position tracking to prevent duplicate orders and balance checks.
+ * Optimized for 5-minute paper trading only - no real orders are sent.
+ * Includes position tracking to prevent duplicate orders.
  */
 export async function evaluateAndTrade(market: Market): Promise<void> {
   const minEdge = parseFloat(process.env.MIN_EDGE ?? "0.05");
   const maxSize = parseFloat(process.env.MAX_POSITION_SIZE_USDC ?? "100");
-  const isPaper = process.env.PAPER_TRADE === "true";
+  // Always use paper mode - this bot only supports paper trading
+  const isPaper = PAPER_MODE_ONLY;
 
   for (let i = 0; i < market.outcomes.length; i++) {
     const price = market.prices[i];
@@ -179,10 +180,19 @@ async function submitOrder(trade: TradeRecord): Promise<void> {
 let _tradingLoopTimer: NodeJS.Timeout | null = null;
 let _isRunning = false;
 
-/** Main trading loop — polls markets and evaluates trade signals. */
+// ── 5-Minute Optimization Constants ────────────────────────────────────────
+// This bot only supports 5-minute trading intervals in paper mode.
+const FIVE_MINUTE_INTERVAL_MS = 300000; // 5 minutes = 300,000ms
+const PAPER_MODE_ONLY = true; // Paper mode is always enabled
+
+/** Main trading loop — polls markets and evaluates trade signals.
+ *  Optimized for 5-minute intervals in paper mode only.
+ */
 export async function runTradingLoop(): Promise<void> {
-  const interval = parseInt(process.env.POLL_INTERVAL_MS ?? "30000", 10);
-  console.log(`[trading] Starting loop (interval=${interval}ms, paper=${process.env.PAPER_TRADE})`);
+  // Always use 5-minute interval regardless of env setting
+  const interval = FIVE_MINUTE_INTERVAL_MS;
+  console.log(`[trading] Starting 5-minute paper trading loop (interval=${interval}ms)`);
+  console.log(`[trading] Paper mode: ${PAPER_MODE_ONLY ? 'ENABLED (locked)' : 'disabled'}`);
   _isRunning = true;
 
   const tick = async () => {
