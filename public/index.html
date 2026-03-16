@@ -366,9 +366,10 @@
     async function loadTrades() {
       const res = await fetch('/admin/trades');
       const data = await res.json();
-      const trades = data.trades || data;
+      // API returns { trades: [...], pagination: {...} }
+      const trades = data.trades;
       const tbody = document.getElementById('trades-tbody');
-      if (!trades.length) { tbody.innerHTML = '<tr><td colspan="9" style="color:#484f58">No trades yet.</td></tr>'; return; }
+      if (!trades || !trades.length) { tbody.innerHTML = '<tr><td colspan="9" style="color:#484f58">No trades yet.</td></tr>'; return; }
       tbody.innerHTML = trades.map(t => `
         <tr>
           <td title="${t.id}">${t.id.slice(0, 14)}…</td>

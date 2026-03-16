@@ -59,7 +59,8 @@ export function getTradingMode(): TradingMode {
   if (!currentState) {
     initTradingMode();
   }
-  return currentState!.mode;
+  // currentState is guaranteed to be non-null after initTradingMode()
+  return currentState?.mode ?? DEFAULT_MODE;
 }
 
 /**
@@ -70,7 +71,11 @@ export function getTradingModeState(): TradingModeState {
   if (!currentState) {
     initTradingMode();
   }
-  return { ...currentState! };
+  // currentState is guaranteed to be non-null after initTradingMode()
+  // Return a copy to prevent external mutation
+  return currentState 
+    ? { ...currentState } 
+    : { mode: DEFAULT_MODE, changedAt: Date.now(), changedBy: "system" };
 }
 
 /**

@@ -121,11 +121,13 @@ const MARKETS: Record<string, { conditionId: string; yesTokenId: string; noToken
 
 // ── Trading Mode ────────────────────────────────────────────────────────────
 // Trading mode is dynamically controlled via the dashboard.
-// Use isPaperMode() to check current mode.
+// Use isPaperMode() to check current mode at trade execution time.
 
-// Default configuration (uses dynamic trading mode)
+// Default configuration
+// Note: paperMode in this config is only used as a fallback.
+// Actual mode is determined by isPaperMode() at trade execution time.
 const DEFAULT_CONFIG: SpeedTradeConfig = {
-  paperMode: true, // Initial value, will be overridden by isPaperMode()
+  paperMode: true, // Default fallback; actual mode determined by isPaperMode()
   minBalanceUSDC: parseFloat(process.env.MIN_BALANCE_USDC ?? "10"),
   maxPositionSizeUSDC: parseFloat(process.env.MAX_POSITION_SIZE_USDC ?? "50"),
   lagThreshold: parseFloat(process.env.LAG_THRESHOLD ?? "0.02"),
