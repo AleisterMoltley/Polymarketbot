@@ -1,4 +1,5 @@
 import { ethers, JsonRpcProvider, Wallet, Contract } from "ethers";
+import { decrypt, isEncryptedKey } from "./crypto";
 
 let _wallet: Wallet | null = null;
 
@@ -17,14 +18,61 @@ const ERC20_ABI = [
 
 /**
  * Initialise and return the Ethers Wallet derived from PRIVATE_KEY.
+ * Supports both raw private keys and encrypted keys.
  * A JSON-RPC provider is attached when POLYGON_RPC_URL is set.
+ * 
+ * For encrypted keys:
+ * - Set PRIVATE_KEY_ENCRYPTED with the encrypted key
+ * - Set KEY_PASSWORD or ENCRYPTION_PASSWORD with the decryption password
  */
 export function getWallet(): Wallet {
   if (_wallet) return _wallet;
 
-  const privateKey = process.env.PRIVATE_KEY;
+  let privateKey = process.env.PRIVATE_KEY;
+  const encryptedKey = process.env.PRIVATE_KEY_ENCRYPTED;
+  
+  // Handle encrypted key
+  if (encryptedKey) {
+    const password = process.env.KEY_PASSWORD ?? process.env.ENCRYPTION_PASSWORD;
+    if (!password) {
+      throw new Error(
+        "PRIVATE_KEY_ENCRYPTED is set but KEY_PASSWORD or ENCRYPTION_PASSWORD is missing."
+      );
+    }
+    
+    try {
+      console.log("[wallet] Decrypting private key...");
+      privateKey = decrypt(encryptedKey, password);
+      console.log("[wallet] Private key decrypted successfully");
+    } catch (err) {
+      throw new Error(`Failed to decrypt private key: ${(err as Error).message}`);
+    }
+  }
+
+  // Check if the provided key is actually encrypted (user mistake)
+  if (privateKey && isEncryptedKey(privateKey)) {
+    const password = process.env.KEY_PASSWORD ?? process.env.ENCRYPTION_PASSWORD;
+    if (password) {
+      try {
+        console.log("[wallet] PRIVATE_KEY appears to be encrypted, decrypting...");
+        privateKey = decrypt(privateKey, password);
+        console.log("[wallet] Private key decrypted successfully");
+      } catch (err) {
+        throw new Error(
+          `PRIVATE_KEY appears to be encrypted but decryption failed. ` +
+          `Either provide the correct password or use a raw private key.`
+        );
+      }
+    } else {
+      throw new Error(
+        "PRIVATE_KEY appears to be encrypted. " +
+        "Set KEY_PASSWORD to decrypt it, or provide a raw private key."
+      );
+    }
+  }
+
   if (!privateKey) {
-    throw new Error("PRIVATE_KEY is not set in environment variables.");
+    throw new Error("PRIVATE_KEY or PRIVATE_KEY_ENCRYPTED is not set in environment variables.");
   }
 
   // Validate private key format

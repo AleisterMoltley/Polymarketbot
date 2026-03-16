@@ -8,10 +8,20 @@ import { loadStore, saveStore } from "./utils/jsonStore";
 import adminRouter from "./admin/tabs";
 import { runTradingLoop, stopTradingLoop } from "./bot/trading";
 import { getStats, flushStats } from "./admin/stats";
+import { 
+  initStrategies, 
+  startStrategies, 
+  stopStrategies,
+  getStrategyStats,
+  calculateAnnualizedReturn
+} from "./bot/strategyManager";
+import { initTelegram, alertShutdown, alertError } from "./utils/telegram";
 
 // ── Bootstrap ──────────────────────────────────────────────────────────────
 
 loadStore();
+initTelegram();
+initStrategies();
 
 const PORT = parseInt(process.env.PORT ?? "3000", 10);
 const STATS_BROADCAST_INTERVAL = parseInt(process.env.STATS_BROADCAST_INTERVAL_MS ?? "10000", 10);
@@ -42,7 +52,16 @@ app.get("/ready", (_req, res) => {
   res.json({ 
     status: "ready", 
     timestamp: new Date().toISOString(),
-    stats: getStats()
+    stats: getStats(),
+    strategies: getStrategyStats(),
+  });
+});
+
+// Strategy statistics endpoint
+app.get("/api/strategies", (_req, res) => {
+  res.json({
+    stats: getStrategyStats(),
+    annualized: calculateAnnualizedReturn(),
   });
 });
 
@@ -112,6 +131,10 @@ async function gracefulShutdown(signal: string): Promise<void> {
   console.log("[server] Stopping trading loop...");
   stopTradingLoop();
 
+  // Stop all strategies
+  console.log("[server] Stopping strategies...");
+  await stopStrategies();
+
   // Stop stats broadcast
   stopStatsBroadcast();
 
@@ -119,6 +142,9 @@ async function gracefulShutdown(signal: string): Promise<void> {
   console.log("[server] Flushing stats to disk...");
   flushStats();
   saveStore();
+
+  // Send shutdown notification
+  await alertShutdown(signal);
 
   // Close WebSocket connections
   console.log("[server] Closing WebSocket connections...");
@@ -151,11 +177,14 @@ process.on("SIGINT", () => gracefulShutdown("SIGINT"));
 // Handle uncaught exceptions
 process.on("uncaughtException", (err) => {
   console.error("[server] Uncaught exception:", err);
+  alertError(err.message, "uncaughtException").catch(() => {});
   gracefulShutdown("uncaughtException");
 });
 
 process.on("unhandledRejection", (reason, promise) => {
   console.error("[server] Unhandled rejection at:", promise, "reason:", reason);
+  const message = reason instanceof Error ? reason.message : String(reason);
+  alertError(message, "unhandledRejection").catch(() => {});
 });
 
 // ── Start ──────────────────────────────────────────────────────────────────
@@ -169,8 +198,15 @@ server.listen(PORT, () => {
 // Start auto-broadcast of stats
 startStatsBroadcast();
 
+// Start all strategies
+startStrategies().catch((err) => {
+  console.error("[bot] Failed to start strategies:", err);
+  alertError(err.message, "strategyStartup").catch(() => {});
+});
+
 // Start the trading loop (non-blocking)
 runTradingLoop().catch((err) => {
   console.error("[bot] Trading loop crashed:", err);
+  alertError(err.message, "tradingLoopCrash").catch(() => {});
   gracefulShutdown("tradingLoopCrash");
 });
