@@ -42,6 +42,12 @@ export function setItem<T>(key: string, value: T, persist = false): void {
   if (persist) saveStore();
 }
 
+/** Set a value in the in-memory store and persist to disk immediately. */
+export function set(key: string, value: unknown): void {
+  memoryStore[key] = value;
+  saveStore();
+}
+
 /** Return a snapshot of the full store. */
 export function getSnapshot(): Store {
   return { ...memoryStore };
