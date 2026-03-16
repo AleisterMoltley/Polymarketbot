@@ -118,9 +118,14 @@ const MARKETS: Record<string, { conditionId: string; yesTokenId: string; noToken
   },
 };
 
-// Default configuration
+// ── 5-Minute Paper Trading Mode ────────────────────────────────────────────
+// This bot is optimized for 5-minute paper trading only.
+// Paper mode is always enabled regardless of environment settings.
+const PAPER_MODE_ONLY = true;
+
+// Default configuration (paper mode forced)
 const DEFAULT_CONFIG: SpeedTradeConfig = {
-  paperMode: process.env.PAPER_TRADE === "true",
+  paperMode: PAPER_MODE_ONLY, // Always paper mode
   minBalanceUSDC: parseFloat(process.env.MIN_BALANCE_USDC ?? "10"),
   maxPositionSizeUSDC: parseFloat(process.env.MAX_POSITION_SIZE_USDC ?? "50"),
   lagThreshold: parseFloat(process.env.LAG_THRESHOLD ?? "0.02"),
@@ -540,31 +545,26 @@ function appendToPaperHistory(trade: SpeedTradeResult): void {
 
 // ── Public API ─────────────────────────────────────────────────────────────
 
-/** Start the speed trading loop. */
+/** Start the speed trading loop (5-minute paper trading only). */
 export async function startSpeedTrading(customConfig?: Partial<SpeedTradeConfig>): Promise<void> {
   if (state.isRunning) {
     log("Speed trading already running", "warn");
     return;
   }
 
-  // Merge custom config
-  config = { ...DEFAULT_CONFIG, ...customConfig };
-  
-  log(`Starting speed trading (paper=${config.paperMode}, throttle=${config.throttleMs}ms, lagThreshold=${config.lagThreshold})`);
-  
-  // Check wallet balance if not paper mode
-  if (!config.paperMode) {
-    try {
-      const balance = await getTokenBalance("USDC");
-      log(`Wallet USDC balance: ${balance}`);
-      if (parseFloat(balance) < config.minBalanceUSDC) {
-        throw new Error(`Insufficient USDC balance: ${balance} < ${config.minBalanceUSDC}`);
-      }
-    } catch (err) {
-      log(`Balance check failed: ${err}`, "error");
-      throw err;
-    }
+  // Warn if user tries to override paperMode (it's locked to true)
+  if (customConfig?.paperMode === false) {
+    log("Warning: paperMode=false was provided but is ignored. This bot only supports paper trading.", "warn");
   }
+
+  // Merge custom config but always enforce paper mode
+  config = { ...DEFAULT_CONFIG, ...customConfig, paperMode: PAPER_MODE_ONLY };
+  
+  log(`Starting 5-minute paper trading (paper=${config.paperMode}, throttle=${config.throttleMs}ms, lagThreshold=${config.lagThreshold})`);
+  log("Note: This bot only supports paper trading mode for 5-minute intervals");
+  
+  // Paper mode always enabled - no balance check needed
+  // Balance check removed as we're paper trading only
 
   state.isRunning = true;
   state.totalTrades = 0;
