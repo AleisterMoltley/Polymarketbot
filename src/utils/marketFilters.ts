@@ -2,6 +2,7 @@
  * Market Filters Module
  * 
  * Provides filtering capabilities for Polymarket markets:
+ * - Resolution time filter: Filter markets that resolve within a specified time window
  * - Liquidity filter: Filter out illiquid markets
  * - Volume filter: Filter markets by minimum trading volume
  * - Category filter: Filter markets by category/tags
@@ -30,9 +31,17 @@ export interface ExtendedMarket {
   closed?: boolean;        // Whether market is closed
 }
 
+// ── Resolution Time Constants ──────────────────────────────────────────────
+
+/** Maximum resolution time in milliseconds (5 minutes = 300,000ms) */
+export const MAX_RESOLUTION_TIME_MS = 5 * 60 * 1000; // 5 minutes
+
 // ── Filter Configuration ───────────────────────────────────────────────────
 
 export interface MarketFilterConfig {
+  // Resolution time filter (5-minute markets only)
+  maxResolutionTimeMs: number; // Maximum time until resolution in ms (default: 300000 = 5 min)
+  
   // Liquidity filter
   minLiquidity: number;        // Minimum liquidity in USDC (default: 0 = no filter)
   
@@ -57,6 +66,7 @@ export interface MarketFilterConfig {
 // ── Default Configuration ──────────────────────────────────────────────────
 
 const DEFAULT_FILTER_CONFIG: MarketFilterConfig = {
+  maxResolutionTimeMs: MAX_RESOLUTION_TIME_MS, // 5 minutes - only trade markets resolving soon
   minLiquidity: 0,
   minVolume: 0,
   categories: [],
@@ -89,6 +99,7 @@ export function initMarketFilters(): void {
     // Load from centralized config
     _filterConfig = {
       ...DEFAULT_FILTER_CONFIG,
+      maxResolutionTimeMs: config.marketFilters.maxResolutionTimeMs,
       minLiquidity: config.marketFilters.minLiquidity,
       minVolume: config.marketFilters.minVolume,
       categories: config.marketFilters.filterCategories,
@@ -115,6 +126,9 @@ export function setFilterConfig(
   changedBy: string = "api"
 ): MarketFilterConfig {
   // Validate updates
+  if (updates.maxResolutionTimeMs !== undefined && updates.maxResolutionTimeMs < 0) {
+    throw new Error("maxResolutionTimeMs cannot be negative");
+  }
   if (updates.minLiquidity !== undefined && updates.minLiquidity < 0) {
     throw new Error("minLiquidity cannot be negative");
   }
@@ -142,6 +156,45 @@ export function resetFilterConfig(): MarketFilterConfig {
 }
 
 // ── Filter Functions ───────────────────────────────────────────────────────
+
+/**
+ * Filter markets by resolution time.
+ * Only includes markets that will resolve within the specified time window.
+ * This ensures the bot only trades markets resolving within 5 minutes (or configured time).
+ * 
+ * @param markets - Array of markets to filter
+ * @param maxResolutionTimeMs - Maximum time until resolution in milliseconds
+ * @returns Markets that resolve within the specified time window
+ */
+export function filterByResolutionTime(
+  markets: ExtendedMarket[],
+  maxResolutionTimeMs: number
+): ExtendedMarket[] {
+  if (maxResolutionTimeMs <= 0) return markets;
+  
+  const now = Date.now();
+  const maxEndTime = now + maxResolutionTimeMs;
+  
+  return markets.filter(market => {
+    // Skip markets without endDate
+    if (!market.endDate) {
+      return false;
+    }
+    
+    // Parse the end date
+    const endTime = new Date(market.endDate).getTime();
+    
+    // Check if the date is valid
+    if (isNaN(endTime)) {
+      console.warn(`[filters] Invalid endDate for market ${market.conditionId}: ${market.endDate}`);
+      return false;
+    }
+    
+    // Market must resolve in the future but within the max time window
+    // Allow markets that resolve within the next maxResolutionTimeMs
+    return endTime > now && endTime <= maxEndTime;
+  });
+}
 
 /**
  * Filter markets by minimum liquidity
@@ -307,6 +360,14 @@ export function applyFilters(
       totalAfter: filtered.length,
       filtersApplied: ["none (filtering disabled)"],
     };
+  }
+  
+  // Apply resolution time filter (5-minute markets only)
+  // This is the most important filter - ensures we only trade markets resolving soon
+  if (cfg.maxResolutionTimeMs > 0) {
+    filtered = filterByResolutionTime(filtered, cfg.maxResolutionTimeMs);
+    const minutes = Math.round(cfg.maxResolutionTimeMs / 60000);
+    filtersApplied.push(`resolves within ${minutes} min`);
   }
   
   // Apply liquidity filter

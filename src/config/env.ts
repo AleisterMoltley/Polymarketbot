@@ -80,6 +80,8 @@ export interface MarketConfig {
 export interface MarketFilterConfig {
   /** Enable/disable market filtering */
   filtersEnabled: boolean;
+  /** Maximum time until resolution in ms (default: 300000 = 5 min). Set to 0 to disable. */
+  maxResolutionTimeMs: number;
   /** Minimum liquidity in USDC (0 = no filter) */
   minLiquidity: number;
   /** Minimum 24h trading volume in USDC (0 = no filter) */
@@ -227,6 +229,7 @@ function loadConfig(): AppConfig {
     },
     marketFilters: {
       filtersEnabled: process.env.MARKET_FILTERS_ENABLED !== "false",
+      maxResolutionTimeMs: parseEnvInt("MAX_RESOLUTION_TIME_MS", 300000), // Default: 5 minutes
       minLiquidity: parseEnvFloat("MIN_LIQUIDITY", 0),
       minVolume: parseEnvFloat("MIN_VOLUME", 0),
       filterCategories: parseStringArray("FILTER_CATEGORIES"),
