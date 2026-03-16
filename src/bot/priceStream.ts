@@ -28,6 +28,7 @@ type OutgoingMessage = SubscribeMessage | UnsubscribeMessage;
 const WS_URL = process.env.CLOB_WS_URL ?? "wss://clob.polymarket.com/ws";
 const RECONNECT_DELAY_MS = 5000;
 const PRICES_KEY = "realtimePrices";
+const PERSIST_TO_DISK = false; // Don't persist price updates to disk on every update
 
 // ── State ──────────────────────────────────────────────────────────────────
 
@@ -54,7 +55,7 @@ export function getAllPrices(): Record<string, PriceData> {
 function storePrice(data: PriceData): void {
   const prices = getItem<Record<string, PriceData>>(PRICES_KEY) ?? {};
   prices[data.marketId] = data;
-  setItem(PRICES_KEY, prices, false); // Don't persist to disk on every update
+  setItem(PRICES_KEY, prices, PERSIST_TO_DISK);
 }
 
 // ── Listener management ────────────────────────────────────────────────────
@@ -163,7 +164,17 @@ function sendMessage(message: OutgoingMessage): void {
   ws.send(JSON.stringify(message));
 }
 
-/** Handle incoming WebSocket messages. */
+/** 
+ * Handle incoming WebSocket messages.
+ * Expected price message format from Polymarket CLOB WebSocket:
+ * {
+ *   market: string,      // Primary market identifier (condition ID)
+ *   midPrice: number,    // Required: mid-market price
+ *   bestBid?: number,    // Optional: best bid price
+ *   bestAsk?: number,    // Optional: best ask price
+ * }
+ * Note: The API may use 'market', 'marketId', or 'conditionId' as the identifier field.
+ */
 function handleMessage(data: unknown): void {
   if (typeof data !== "object" || data === null) {
     return;
@@ -171,16 +182,18 @@ function handleMessage(data: unknown): void {
 
   const msg = data as Record<string, unknown>;
 
-  // Handle price update messages
-  if ("midPrice" in msg || "bestBid" in msg || "bestAsk" in msg) {
+  // Handle price update messages - require midPrice to be present and valid
+  if ("midPrice" in msg && typeof msg.midPrice === "number") {
+    // Extract market identifier - API may use different field names
     const marketId = (msg.market ?? msg.marketId ?? msg.conditionId) as string | undefined;
-    if (!marketId) {
+    if (!marketId || typeof marketId !== "string") {
+      console.warn("[priceStream] Price message missing valid market identifier");
       return;
     }
 
     const priceData: PriceData = {
       marketId,
-      midPrice: typeof msg.midPrice === "number" ? msg.midPrice : 0,
+      midPrice: msg.midPrice,
       bestBid: typeof msg.bestBid === "number" ? msg.bestBid : undefined,
       bestAsk: typeof msg.bestAsk === "number" ? msg.bestAsk : undefined,
       timestamp: Date.now(),
