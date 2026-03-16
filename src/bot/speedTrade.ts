@@ -99,6 +99,15 @@ const RECONNECT_DELAY_MS = 3000;
 const PRICE_HISTORY_FILE = "paper-trade-history.json";
 const SPEED_TRADES_KEY = "speedTrades";
 
+// Price calculation constants
+const RECENT_PRICE_WINDOW = 5; // Number of recent prices to average for lag detection
+const DEFAULT_BID_SPREAD = 0.99; // Default bid = midPrice * 0.99 (1% below)
+const DEFAULT_ASK_SPREAD = 1.01; // Default ask = midPrice * 1.01 (1% above)
+
+// Paper trading simulation constants
+const PAPER_WIN_PROBABILITY = 0.6; // 60% chance of winning paper trades
+const PAPER_LOSS_FACTOR = 0.5; // Losing paper trades lose 50% of potential gain
+
 // Polymarket 5-minute crypto market condition IDs (example placeholders)
 // In production, these would be fetched from the Polymarket API
 const CRYPTO_MARKETS: Record<string, { conditionId: string; yesTokenId: string; noTokenId: string }> = {
@@ -187,8 +196,8 @@ function isInLastSecondWindow(): boolean {
 function calculatePriceLag(data: CryptoPriceData): number {
   if (data.priceHistory.length < 3) return 0;
   
-  const recentAvg = data.priceHistory.slice(-5).reduce((a, b) => a + b, 0) / 
-                    Math.min(5, data.priceHistory.length);
+  const windowSize = Math.min(RECENT_PRICE_WINDOW, data.priceHistory.length);
+  const recentAvg = data.priceHistory.slice(-RECENT_PRICE_WINDOW).reduce((a, b) => a + b, 0) / windowSize;
   return Math.abs(data.midPrice - recentAvg);
 }
 
@@ -197,8 +206,8 @@ function detectPriceLag(data: CryptoPriceData): { isLagging: boolean; lagAmount:
   const lagAmount = calculatePriceLag(data);
   const isLagging = lagAmount >= config.lagThreshold;
   
-  const recentAvg = data.priceHistory.slice(-5).reduce((a, b) => a + b, 0) / 
-                    Math.min(5, data.priceHistory.length);
+  const windowSize = Math.min(RECENT_PRICE_WINDOW, data.priceHistory.length);
+  const recentAvg = data.priceHistory.slice(-RECENT_PRICE_WINDOW).reduce((a, b) => a + b, 0) / windowSize;
   const direction = data.midPrice < recentAvg ? "down" : "up";
   
   return { isLagging, lagAmount, direction };
@@ -331,8 +340,8 @@ function handlePriceMessage(data: unknown): void {
       priceHistory.shift();
     }
 
-    const bestBid = typeof msg.bestBid === "number" ? msg.bestBid : msg.midPrice * 0.99;
-    const bestAsk = typeof msg.bestAsk === "number" ? msg.bestAsk : msg.midPrice * 1.01;
+    const bestBid = typeof msg.bestBid === "number" ? msg.bestBid : msg.midPrice * DEFAULT_BID_SPREAD;
+    const bestAsk = typeof msg.bestAsk === "number" ? msg.bestAsk : msg.midPrice * DEFAULT_ASK_SPREAD;
 
     const updatedData: CryptoPriceData = {
       symbol,
@@ -457,8 +466,9 @@ async function executeTrade(params: ExecuteTradeParams): Promise<void> {
       log(`[PAPER] BUY ${size.toFixed(2)} USDC of ${symbol} ${outcome} @ ${price.toFixed(4)} (lag=${lagAmount.toFixed(4)}, lastSec=${inLastSecondWindow})`);
       trade.status = "FILLED";
       
-      // Simulate small positive PnL for paper trades (for testing)
-      const simulatedPnl = size * lagAmount * (Math.random() > 0.4 ? 1 : -0.5);
+      // Simulate PnL for paper trades based on configurable win probability
+      const isWinningTrade = Math.random() < PAPER_WIN_PROBABILITY;
+      const simulatedPnl = size * lagAmount * (isWinningTrade ? 1 : -PAPER_LOSS_FACTOR);
       trade.pnl = Math.round(simulatedPnl * 100) / 100;
     } else {
       // Live trade - submit to CLOB
