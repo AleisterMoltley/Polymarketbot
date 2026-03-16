@@ -2,7 +2,7 @@
  * wallet.js — Wallet management helper (CommonJS)
  *
  * Provides a lightweight interface for loading and using an Ethers.js wallet
- * from environment variables.  Used by scripts that run outside the compiled
+ * from environment variables. Used by scripts that run outside the compiled
  * TypeScript build (e.g. one-off CLI utilities, Dockerfile HEALTHCHECK).
  */
 "use strict";
@@ -41,7 +41,7 @@ function getAddress() {
 }
 
 /**
- * Return the MATIC balance (in Ether units) of the wallet.
+ * Return the native token balance of the wallet.
  *
  * @returns {Promise<string>}
  */
@@ -63,7 +63,7 @@ if (require.main === module) {
       const addr = getAddress();
       console.log("Wallet address:", addr);
       const bal = await getBalance();
-      console.log("MATIC balance: ", bal);
+      console.log("Native balance:", bal);
     } catch (err) {
       console.error("Error:", err.message);
       process.exit(1);

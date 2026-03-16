@@ -46,11 +46,11 @@ EXPOSE 3000
 HEALTHCHECK --interval=30s --timeout=10s --start-period=5s --retries=3 \
     CMD node ok.js || exit 1
 
-# Environment variables with sensible defaults
+# Environment variables optimized for 5-minute interval trading
 ENV NODE_ENV=production
 ENV PORT=3000
 ENV PAPER_TRADE=true
-ENV ENABLE_SPEED_TRADING=false
+ENV POLL_INTERVAL_MS=300000
 
 # Start the bot
 CMD ["node", "dist/index.js"]
