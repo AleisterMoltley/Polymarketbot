@@ -1,4 +1,5 @@
 import { ClobClient, Side, Chain, ClobSigner } from "@polymarket/clob-client";
+import { config } from "../config/env";
 import { getWallet } from "../utils/wallet";
 import type { Wallet } from "ethers";
 
@@ -37,8 +38,8 @@ let _client: ClobClient | null = null;
 function getClient(): ClobClient {
   if (_client) return _client;
 
-  const host = process.env.CLOB_API_URL ?? "https://clob.polymarket.com";
-  const chainIdNum = parseInt(process.env.CHAIN_ID ?? "137", 10);
+  const host = config.polymarket.clobApiUrl;
+  const chainIdNum = config.wallet.chainId;
 
   if (!VALID_CHAIN_IDS.has(chainIdNum)) {
     throw new Error(
@@ -47,9 +48,9 @@ function getClient(): ClobClient {
   }
   const chainId = chainIdNum as Chain;
 
-  const apiKey = process.env.CLOB_API_KEY;
-  const apiSecret = process.env.CLOB_API_SECRET;
-  const passphrase = process.env.CLOB_API_PASSPHRASE;
+  const apiKey = config.polymarket.clobApiKey;
+  const apiSecret = config.polymarket.clobApiSecret;
+  const passphrase = config.polymarket.clobApiPassphrase;
 
   if (!apiKey || !apiSecret || !passphrase) {
     throw new Error(

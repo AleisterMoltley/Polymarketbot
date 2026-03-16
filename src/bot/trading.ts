@@ -1,4 +1,5 @@
 import axios from "axios";
+import { config } from "../config/env";
 import { getWallet, getTokenBalance } from "../utils/wallet";
 import { recordTrade, getAllTrades } from "../admin/stats";
 import { getItem, setItem } from "../utils/jsonStore";
@@ -95,7 +96,7 @@ function transformMarket(raw: RawMarket): ExtendedMarket | null {
 
 /** Fetch a list of active markets from the Polymarket CLOB API with optional filtering. */
 export async function fetchMarkets(): Promise<ExtendedMarket[]> {
-  const baseUrl = process.env.CLOB_API_URL ?? "https://clob.polymarket.com";
+  const baseUrl = config.polymarket.clobApiUrl;
   const filterConfig = getFilterConfig();
   
   try {
@@ -160,8 +161,8 @@ export async function evaluateAndTrade(market: ExtendedMarket): Promise<void> {
     return;
   }
 
-  const minEdge = parseFloat(process.env.MIN_EDGE ?? "0.05");
-  const maxSize = parseFloat(process.env.MAX_POSITION_SIZE_USDC ?? "100");
+  const minEdge = config.trading.minEdge;
+  const maxSize = config.trading.maxPositionSizeUsdc;
   // Use dynamic trading mode from dashboard
   const isPaper = isPaperMode();
 
@@ -291,7 +292,7 @@ export async function evaluateAndTrade(market: ExtendedMarket): Promise<void> {
  * Requires CLOB_API_KEY, CLOB_API_SECRET, CLOB_API_PASSPHRASE.
  */
 async function submitOrder(trade: TradeRecord): Promise<void> {
-  const baseUrl = process.env.CLOB_API_URL ?? "https://clob.polymarket.com";
+  const baseUrl = config.polymarket.clobApiUrl;
   const wallet = getWallet();
   const timestamp = Math.floor(Date.now() / 1000).toString();
 
@@ -299,9 +300,9 @@ async function submitOrder(trade: TradeRecord): Promise<void> {
     "POLY_ADDRESS": wallet.address,
     "POLY_SIGNATURE": await wallet.signMessage(timestamp),
     "POLY_TIMESTAMP": timestamp,
-    "POLY_API_KEY": process.env.CLOB_API_KEY ?? "",
-    "POLY_API_SECRET": process.env.CLOB_API_SECRET ?? "",
-    "POLY_PASSPHRASE": process.env.CLOB_API_PASSPHRASE ?? "",
+    "POLY_API_KEY": config.polymarket.clobApiKey,
+    "POLY_API_SECRET": config.polymarket.clobApiSecret,
+    "POLY_PASSPHRASE": config.polymarket.clobApiPassphrase,
   };
 
   await axios.post(

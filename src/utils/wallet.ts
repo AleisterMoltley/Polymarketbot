@@ -1,4 +1,5 @@
 import { ethers, JsonRpcProvider, Wallet, Contract } from "ethers";
+import { config } from "../config/env";
 
 let _wallet: Wallet | null = null;
 
@@ -22,7 +23,7 @@ const ERC20_ABI = [
 export function getWallet(): Wallet {
   if (_wallet) return _wallet;
 
-  const privateKey = process.env.PRIVATE_KEY;
+  const privateKey = config.wallet.privateKey;
   if (!privateKey) {
     throw new Error("PRIVATE_KEY is not set in environment variables.");
   }
@@ -32,8 +33,8 @@ export function getWallet(): Wallet {
     throw new Error("PRIVATE_KEY must be a valid 64-character hexadecimal string.");
   }
 
-  const rpcUrl = process.env.POLYGON_RPC_URL;
-  if (rpcUrl) {
+  const rpcUrl = config.wallet.polygonRpcUrl;
+  if (rpcUrl && rpcUrl !== "https://polygon-rpc.com") {
     const provider = new JsonRpcProvider(rpcUrl);
     _wallet = new Wallet(privateKey, provider);
   } else {

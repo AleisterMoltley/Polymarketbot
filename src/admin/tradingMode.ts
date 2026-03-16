@@ -6,6 +6,7 @@
  * which can be controlled via the dashboard.
  */
 
+import { config } from "../config/env";
 import { getItem, setItem } from "../utils/jsonStore";
 
 // ── Types ──────────────────────────────────────────────────────────────────
@@ -22,9 +23,8 @@ export interface TradingModeState {
 
 const TRADING_MODE_KEY = "tradingMode";
 
-// Default mode from environment or "paper" as fallback
-const DEFAULT_MODE: TradingMode = 
-  process.env.TRADING_MODE === "live" ? "live" : "paper";
+// Default mode from environment config
+const DEFAULT_MODE: TradingMode = config.trading.tradingMode;
 
 // ── State ──────────────────────────────────────────────────────────────────
 

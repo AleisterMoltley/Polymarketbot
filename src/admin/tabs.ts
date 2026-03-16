@@ -1,10 +1,11 @@
 import { Router, Request, Response, NextFunction } from "express";
+import { config } from "../config/env";
 import { getAllTrades, getStats } from "./stats";
 import { getSnapshot } from "../utils/jsonStore";
 
 const router = Router();
 
-const ADMIN_SECRET = process.env.ADMIN_SECRET;
+const ADMIN_SECRET = config.server.adminSecret;
 
 // Pagination defaults
 const DEFAULT_PAGE_LIMIT = 50;
