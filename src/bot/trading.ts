@@ -107,9 +107,10 @@ function transformMarket(raw: RawMarket): ExtendedMarket | null {
  * - Clamped between MIN_LIQUIDITY_SCORE and MAX_LIQUIDITY_SCORE
  * 
  * Examples (with referenceUsdc = 10000):
- * - $1,000 liquidity → score ~0.316
- * - $10,000 liquidity → score = 1.0
- * - $40,000 liquidity → score = 2.0 (capped)
+ * - $100 liquidity → score = 0.1 (clamped to minimum)
+ * - $2,500 liquidity → score = 0.5
+ * - $10,000 liquidity → score = 1.0 (reference point)
+ * - $40,000 liquidity → score = 2.0 (capped at maximum)
  */
 function calculateLiquidityScore(liquidity: number | undefined): number {
   const referenceUsdc = config.trading.liquidityReferenceUsdc;
@@ -270,6 +271,9 @@ export async function evaluateAndTrade(market: ExtendedMarket): Promise<void> {
     // Apply liquidity weighting: weighted_edge = raw_edge * liquidity_score
     // This makes edge from high-liquidity markets more valuable
     const edge = rawEdge * liquidityScore;
+    
+    // After weighting, ensure edge is still positive (low liquidity could reduce it significantly)
+    if (edge <= 0) continue;
     
     if (useLiquidityWeighting) {
       console.log(`[trading] Edge calculation: raw=${rawEdge.toFixed(4)}, liquidityScore=${liquidityScore.toFixed(3)}, weighted=${edge.toFixed(4)}`);
