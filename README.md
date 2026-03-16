@@ -103,6 +103,38 @@ npm run dev
 
 Open **http://localhost:3000** to access the admin dashboard.
 
+### Upgrade (Mac Terminal)
+
+To upgrade to the latest version of Polymarketbot on macOS:
+
+```bash
+# Navigate to your Polymarketbot directory
+cd ~/Polymarketbot  # or wherever you cloned the repo
+
+# Fetch and pull the latest changes
+git fetch origin
+git pull origin main
+
+# Install any new dependencies
+npm install
+
+# Rebuild the project
+npm run build
+
+# Restart the bot
+npm run dev        # for development mode
+# or
+npm start          # for production mode
+```
+
+If you're using Docker, rebuild the image after pulling:
+
+```bash
+git pull origin main
+npm run docker:build
+npm run docker:run
+```
+
 ### Docker Deployment
 
 ```bash
