@@ -15,6 +15,7 @@
  */
 
 import WebSocket from "ws";
+import { config as envConfig } from "../config/env";
 import { getWallet, getTokenBalance, hasEnoughBalance } from "../utils/wallet";
 import { recordTrade, getAllTrades, type TradeRecord } from "../admin/stats";
 import { getItem, setItem, saveStore } from "../utils/jsonStore";
@@ -97,7 +98,7 @@ export interface SpeedTradeResult {
 
 // ── Constants ──────────────────────────────────────────────────────────────
 
-const CLOB_WS_URL = process.env.CLOB_WS_URL ?? "wss://clob.polymarket.com/ws";
+const CLOB_WS_URL = envConfig.polymarket.clobWsUrl;
 const RECONNECT_DELAY_MS = 3000;
 const PRICE_HISTORY_FILE = "paper-trade-history.json";
 const SPEED_TRADES_KEY = "speedTrades";
@@ -115,9 +116,9 @@ const PAPER_LOSS_FACTOR = 0.5; // Losing paper trades lose 50% of potential gain
 // These can be updated with actual Polymarket condition IDs for target markets
 const MARKETS: Record<string, { conditionId: string; yesTokenId: string; noTokenId: string }> = {
   DEFAULT: {
-    conditionId: process.env.MARKET_5MIN_CONDITION_ID ?? "market-5min",
-    yesTokenId: process.env.MARKET_5MIN_YES_TOKEN ?? "market-5min-yes",
-    noTokenId: process.env.MARKET_5MIN_NO_TOKEN ?? "market-5min-no",
+    conditionId: envConfig.markets.market5minConditionId,
+    yesTokenId: envConfig.markets.market5minYesToken,
+    noTokenId: envConfig.markets.market5minNoToken,
   },
 };
 
@@ -130,14 +131,14 @@ const MARKETS: Record<string, { conditionId: string; yesTokenId: string; noToken
 // Actual mode is determined by isPaperMode() at trade execution time.
 const DEFAULT_CONFIG: SpeedTradeConfig = {
   paperMode: true, // Default fallback; actual mode determined by isPaperMode()
-  minBalanceUSDC: parseFloat(process.env.MIN_BALANCE_USDC ?? "10"),
-  maxPositionSizeUSDC: parseFloat(process.env.MAX_POSITION_SIZE_USDC ?? "50"),
-  lagThreshold: parseFloat(process.env.LAG_THRESHOLD ?? "0.02"),
-  maxSpread: parseFloat(process.env.MAX_SPREAD ?? "0.05"),
-  throttleMs: parseInt(process.env.THROTTLE_MS ?? "5000", 10),
-  priceHistorySize: parseInt(process.env.PRICE_HISTORY_SIZE ?? "20", 10),
-  lastSecondWindowMs: parseInt(process.env.LAST_SECOND_WINDOW_MS ?? "10000", 10),
-  closeDetectionWindowMs: parseInt(process.env.CLOSE_DETECTION_WINDOW_MS ?? "60000", 10),
+  minBalanceUSDC: envConfig.trading.minBalanceUsdc,
+  maxPositionSizeUSDC: envConfig.trading.maxPositionSizeUsdc,
+  lagThreshold: envConfig.trading.lagThreshold,
+  maxSpread: envConfig.trading.maxSpread,
+  throttleMs: envConfig.trading.throttleMs,
+  priceHistorySize: envConfig.trading.priceHistorySize,
+  lastSecondWindowMs: envConfig.trading.lastSecondWindowMs,
+  closeDetectionWindowMs: envConfig.trading.closeDetectionWindowMs,
 };
 
 // ── State ──────────────────────────────────────────────────────────────────
@@ -146,7 +147,7 @@ let ws: WebSocket | null = null;
 let isConnecting = false;
 let reconnectTimeout: ReturnType<typeof setTimeout> | null = null;
 let priceData: Map<string, MarketPriceData> = new Map();
-let config: SpeedTradeConfig = { ...DEFAULT_CONFIG };
+let speedConfig: SpeedTradeConfig = { ...DEFAULT_CONFIG };
 let _tradeIdCounter = 0;
 
 const state: SpeedTradeState = {
@@ -188,7 +189,7 @@ function getNextMarketClose(): number {
 function isInLastSecondWindow(): boolean {
   const nextClose = getNextMarketClose();
   const timeToClose = nextClose - Date.now();
-  return timeToClose <= config.lastSecondWindowMs && timeToClose > 0;
+  return timeToClose <= speedConfig.lastSecondWindowMs && timeToClose > 0;
 }
 
 /** Calculate price lag between current price and historical average. */
@@ -203,7 +204,7 @@ function calculatePriceLag(data: MarketPriceData): number {
 /** Detect if price is lagging (unsynced) compared to recent history. */
 function detectPriceLag(data: MarketPriceData): { isLagging: boolean; lagAmount: number; direction: "up" | "down" } {
   const lagAmount = calculatePriceLag(data);
-  const isLagging = lagAmount >= config.lagThreshold;
+  const isLagging = lagAmount >= speedConfig.lagThreshold;
   
   const windowSize = Math.min(RECENT_PRICE_WINDOW, data.priceHistory.length);
   const recentAvg = data.priceHistory.slice(-RECENT_PRICE_WINDOW).reduce((a, b) => a + b, 0) / windowSize;
@@ -215,7 +216,7 @@ function detectPriceLag(data: MarketPriceData): { isLagging: boolean; lagAmount:
 /** Check if throttle period has passed for a market. */
 function isThrottled(marketId: string): boolean {
   const lastTrade = state.lastThrottleCheck[marketId] ?? 0;
-  return Date.now() - lastTrade < config.throttleMs;
+  return Date.now() - lastTrade < speedConfig.throttleMs;
 }
 
 /** Update throttle timestamp for a market. */
@@ -335,7 +336,7 @@ function handlePriceMessage(data: unknown): void {
     
     // Update price history (keep last N samples)
     priceHistory.push(msg.midPrice);
-    if (priceHistory.length > config.priceHistorySize) {
+    if (priceHistory.length > speedConfig.priceHistorySize) {
       priceHistory.shift();
     }
 
@@ -382,8 +383,8 @@ async function evaluateTradeOpportunity(data: MarketPriceData): Promise<void> {
   }
 
   // Check spread (avoid high-spread markets)
-  if (data.spread > config.maxSpread) {
-    log(`Skipping ${data.symbol}: spread ${data.spread.toFixed(4)} exceeds max ${config.maxSpread}`, "warn");
+  if (data.spread > speedConfig.maxSpread) {
+    log(`Skipping ${data.symbol}: spread ${data.spread.toFixed(4)} exceeds max ${speedConfig.maxSpread}`, "warn");
     return;
   }
 
@@ -408,13 +409,13 @@ async function evaluateTradeOpportunity(data: MarketPriceData): Promise<void> {
   const price = outcome === "Yes" ? data.midPrice : (1 - data.midPrice);
 
   // Calculate position size based on lag amount (higher lag = more confident)
-  const confidenceFactor = Math.min(lagAmount / config.lagThreshold, 2);
-  const baseSize = config.maxPositionSizeUSDC * 0.5;
-  const size = Math.min(baseSize * confidenceFactor, config.maxPositionSizeUSDC);
+  const confidenceFactor = Math.min(lagAmount / speedConfig.lagThreshold, 2);
+  const baseSize = speedConfig.maxPositionSizeUSDC * 0.5;
+  const size = Math.min(baseSize * confidenceFactor, speedConfig.maxPositionSizeUSDC);
 
   // Check balance (for live trades)
   if (!isPaperMode()) {
-    const hasBalance = await hasEnoughBalance("USDC", Math.max(size, config.minBalanceUSDC));
+    const hasBalance = await hasEnoughBalance("USDC", Math.max(size, speedConfig.minBalanceUSDC));
     if (!hasBalance) {
       log(`Insufficient USDC balance for trade`, "warn");
       return;
@@ -573,16 +574,16 @@ export async function startSpeedTrading(customConfig?: Partial<SpeedTradeConfig>
   const paperMode = isPaperMode();
   
   // Merge custom config with dynamic paper mode
-  config = { ...DEFAULT_CONFIG, ...customConfig, paperMode };
+  speedConfig = { ...DEFAULT_CONFIG, ...customConfig, paperMode };
   
-  log(`Starting speed trading (mode=${paperMode ? 'PAPER' : 'LIVE'}, throttle=${config.throttleMs}ms, lagThreshold=${config.lagThreshold})`);
+  log(`Starting speed trading (mode=${paperMode ? 'PAPER' : 'LIVE'}, throttle=${speedConfig.throttleMs}ms, lagThreshold=${speedConfig.lagThreshold})`);
   log(getTradingHoursStatus());
   
   // Check balance for live trading
   if (!paperMode) {
-    const hasBalance = await hasEnoughBalance("USDC", config.minBalanceUSDC);
+    const hasBalance = await hasEnoughBalance("USDC", speedConfig.minBalanceUSDC);
     if (!hasBalance) {
-      throw new Error(`Insufficient USDC balance. Minimum required: ${config.minBalanceUSDC} USDC`);
+      throw new Error(`Insufficient USDC balance. Minimum required: ${speedConfig.minBalanceUSDC} USDC`);
     }
     log("Live trading enabled - balance check passed");
   }
@@ -629,12 +630,12 @@ export function getSpeedTradeState(): SpeedTradeState & { prices: MarketPriceDat
 
 /** Get current configuration. */
 export function getSpeedTradeConfig(): SpeedTradeConfig {
-  return { ...config };
+  return { ...speedConfig };
 }
 
 /** Update configuration (can be done while running). */
 export function updateSpeedTradeConfig(updates: Partial<SpeedTradeConfig>): void {
-  config = { ...config, ...updates };
+  speedConfig = { ...speedConfig, ...updates };
   log(`Config updated: ${JSON.stringify(updates)}`);
 }
 

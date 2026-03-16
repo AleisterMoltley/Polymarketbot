@@ -1,7 +1,8 @@
 import * as path from "path";
 import * as fs from "fs";
+import { config } from "../config/env";
 
-const DATA_DIR = process.env.DATA_DIR ?? path.join(process.cwd(), "data");
+const DATA_DIR = config.server.dataDir;
 
 interface Store {
   [key: string]: unknown;

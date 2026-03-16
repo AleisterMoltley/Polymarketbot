@@ -4,6 +4,7 @@ import http from "http";
 import path from "path";
 import { WebSocketServer, WebSocket } from "ws";
 
+import { config, logConfig } from "./config/env";
 import { loadStore, saveStore } from "./utils/jsonStore";
 import adminRouter from "./admin/tabs";
 import { runTradingLoop, stopTradingLoop } from "./bot/trading";
@@ -42,6 +43,9 @@ import {
 
 // ── Bootstrap ──────────────────────────────────────────────────────────────
 
+// Log configuration at startup (with sensitive values masked)
+logConfig();
+
 // Initialize JSON store with error handling
 const storeLoaded = loadStore();
 if (!storeLoaded) {
@@ -70,8 +74,8 @@ try {
   console.warn("[server] Using default market filter settings");
 }
 
-const PORT = parseInt(process.env.PORT ?? "3000", 10);
-const STATS_BROADCAST_INTERVAL = parseInt(process.env.STATS_BROADCAST_INTERVAL_MS ?? "10000", 10);
+const PORT = config.server.port;
+const STATS_BROADCAST_INTERVAL = config.server.statsBroadcastIntervalMs;
 const SHUTDOWN_TIMEOUT_MS = 10000; // Force shutdown after 10 seconds
 
 const app = express();
@@ -475,7 +479,7 @@ startStatsBroadcast();
 // Counter for consecutive trading loop failures
 let tradingLoopFailures = 0;
 const MAX_TRADING_LOOP_FAILURES = 5;
-const TRADING_LOOP_RESTART_DELAY_MS = parseInt(process.env.TRADING_LOOP_RESTART_DELAY_MS ?? "30000", 10);
+const TRADING_LOOP_RESTART_DELAY_MS = config.trading.tradingLoopRestartDelayMs;
 
 /** Start the trading loop with automatic restart on failure */
 function startTradingLoopWithRestart(): void {
@@ -508,8 +512,7 @@ function startTradingLoopWithRestart(): void {
 startTradingLoopWithRestart();
 
 // Start speed trading if enabled via environment variable
-const ENABLE_SPEED_TRADING = process.env.ENABLE_SPEED_TRADING === "true";
-if (ENABLE_SPEED_TRADING) {
+if (config.trading.enableSpeedTrading) {
   startSpeedTrading().catch((err) => {
     console.error("[bot] Speed trading startup failed:", err);
     // Don't crash the whole server, just log the error

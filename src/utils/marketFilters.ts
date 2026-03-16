@@ -8,6 +8,7 @@
  * - Pagination: Support for large market volumes
  */
 
+import { config } from "../config/env";
 import { getItem, setItem } from "./jsonStore";
 
 // ── Extended Market Interface ──────────────────────────────────────────────
@@ -85,15 +86,15 @@ export function initMarketFilters(): void {
     _filterConfig = { ...DEFAULT_FILTER_CONFIG, ...stored };
     console.log("[filters] Loaded market filter config:", _filterConfig);
   } else {
-    // Load from environment variables if no stored config
+    // Load from centralized config
     _filterConfig = {
       ...DEFAULT_FILTER_CONFIG,
-      minLiquidity: parseFloat(process.env.MIN_LIQUIDITY ?? "0"),
-      minVolume: parseFloat(process.env.MIN_VOLUME ?? "0"),
-      categories: process.env.FILTER_CATEGORIES?.split(",").map(s => s.trim()).filter(Boolean) ?? [],
-      excludeCategories: process.env.EXCLUDE_CATEGORIES?.split(",").map(s => s.trim()).filter(Boolean) ?? [],
-      pageSize: parseInt(process.env.MARKET_PAGE_SIZE ?? "100", 10),
-      enabled: process.env.MARKET_FILTERS_ENABLED !== "false",
+      minLiquidity: config.marketFilters.minLiquidity,
+      minVolume: config.marketFilters.minVolume,
+      categories: config.marketFilters.filterCategories,
+      excludeCategories: config.marketFilters.excludeCategories,
+      pageSize: config.marketFilters.marketPageSize,
+      enabled: config.marketFilters.filtersEnabled,
     };
     console.log("[filters] Initialized market filter config from env:", _filterConfig);
   }

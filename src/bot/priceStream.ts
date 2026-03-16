@@ -1,4 +1,5 @@
 import WebSocket from "ws";
+import { config } from "../config/env";
 import { setItem, getItem } from "../utils/jsonStore";
 
 // ── Types ──────────────────────────────────────────────────────────────────
@@ -25,7 +26,7 @@ type OutgoingMessage = SubscribeMessage | UnsubscribeMessage;
 
 // ── Constants ──────────────────────────────────────────────────────────────
 
-const WS_URL = process.env.CLOB_WS_URL ?? "wss://clob.polymarket.com/ws";
+const WS_URL = config.polymarket.clobWsUrl;
 const RECONNECT_DELAY_MS = 5000;
 const PRICES_KEY = "realtimePrices";
 const PERSIST_TO_DISK = false; // Don't persist price updates to disk on every update
