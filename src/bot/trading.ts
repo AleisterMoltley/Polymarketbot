@@ -1,4 +1,4 @@
-import axios from "axios";
+import axios, { AxiosError, isAxiosError } from "axios";
 import { config } from "../config/env";
 import { getWallet, getTokenBalance } from "../utils/wallet";
 import { recordTrade, getAllTrades } from "../admin/stats";
@@ -12,6 +12,11 @@ import {
   type ExtendedMarket 
 } from "../utils/marketFilters";
 import type { TradeRecord } from "../admin/stats";
+
+// ── API Error Handling Constants ────────────────────────────────────────────
+const API_TIMEOUT_MS = 10_000;          // 10 second timeout for API calls
+const API_RETRY_ATTEMPTS = 3;           // Number of retry attempts for failed API calls
+const API_RETRY_DELAY_MS = 1_000;       // Initial delay between retries (exponential backoff)
 
 // ── Edge Detection Constants ────────────────────────────────────────────────
 // For binary markets, the sum of Yes and No prices should be approximately 1.
@@ -127,50 +132,134 @@ function calculateLiquidityScore(liquidity: number | undefined): number {
   return Math.min(MAX_LIQUIDITY_SCORE, Math.max(MIN_LIQUIDITY_SCORE, rawScore));
 }
 
+/**
+ * Sleep for a specified number of milliseconds.
+ * Used for retry delays with exponential backoff.
+ */
+function sleep(ms: number): Promise<void> {
+  return new Promise(resolve => setTimeout(resolve, ms));
+}
+
+/**
+ * Format an API error for logging.
+ * Extracts useful information from Axios errors and other error types.
+ */
+function formatApiError(err: unknown): string {
+  if (isAxiosError(err)) {
+    const status = err.response?.status;
+    const statusText = err.response?.statusText;
+    const errorCode = err.code;
+    
+    if (status) {
+      return `HTTP ${status} ${statusText || ''} - ${err.message}`;
+    }
+    if (errorCode === 'ECONNABORTED') {
+      return `Request timeout after ${API_TIMEOUT_MS}ms`;
+    }
+    if (errorCode === 'ENOTFOUND' || errorCode === 'ECONNREFUSED') {
+      return `Network error: ${errorCode} - ${err.message}`;
+    }
+    return `Axios error: ${err.message}`;
+  }
+  
+  if (err instanceof Error) {
+    return err.message;
+  }
+  
+  return String(err);
+}
+
+/**
+ * Execute an API call with retry logic and exponential backoff.
+ * 
+ * @param fn - Async function to execute
+ * @param retries - Number of retry attempts remaining
+ * @param delay - Current delay between retries (doubles each retry)
+ * @returns Result of the API call, or undefined if all retries fail
+ */
+async function withRetry<T>(
+  fn: () => Promise<T>,
+  retries: number = API_RETRY_ATTEMPTS,
+  delay: number = API_RETRY_DELAY_MS
+): Promise<T | undefined> {
+  try {
+    return await fn();
+  } catch (err) {
+    if (retries <= 0) {
+      console.error(`[trading] API call failed after all retries: ${formatApiError(err)}`);
+      return undefined;
+    }
+    
+    // Check if error is retryable
+    const isRetryable = isAxiosError(err) && (
+      !err.response || // Network error
+      err.response.status >= 500 || // Server error
+      err.response.status === 429 || // Rate limited
+      err.code === 'ECONNABORTED' // Timeout
+    );
+    
+    if (!isRetryable) {
+      console.error(`[trading] Non-retryable API error: ${formatApiError(err)}`);
+      return undefined;
+    }
+    
+    console.warn(`[trading] API call failed (${formatApiError(err)}), retrying in ${delay}ms... (${retries} attempts left)`);
+    await sleep(delay);
+    
+    // Exponential backoff: double the delay for next retry
+    return withRetry(fn, retries - 1, delay * 2);
+  }
+}
+
 /** Fetch a list of active markets from the Polymarket CLOB API with optional filtering. */
 export async function fetchMarkets(): Promise<ExtendedMarket[]> {
   const baseUrl = config.polymarket.clobApiUrl;
   const filterConfig = getFilterConfig();
   
-  try {
-    // Build query parameters
-    const params: Record<string, unknown> = { 
-      active: true, 
-      closed: false,
-    };
-    
-    // Add pagination parameter (pageSize is always positive due to validation)
-    params.limit = filterConfig.pageSize;
-    
+  // Build query parameters
+  const params: Record<string, unknown> = { 
+    active: true, 
+    closed: false,
+  };
+  
+  // Add pagination parameter (pageSize is always positive due to validation)
+  params.limit = filterConfig.pageSize;
+  
+  // Execute API call with retry logic
+  const result = await withRetry(async () => {
     const { data } = await axios.get<{ data: RawMarket[] }>(`${baseUrl}/markets`, {
       params,
-      timeout: 10_000,
+      timeout: API_TIMEOUT_MS,
     });
-    
-    const rawMarkets = data.data ?? [];
-
-    // Transform raw API markets into the shape the bot expects
-    const markets: ExtendedMarket[] = [];
-    for (const raw of rawMarkets) {
-      const market = transformMarket(raw);
-      if (market) {
-        markets.push(market);
-      }
-    }
-    
-    // Apply local filters
-    const filterResult = applyFilters(markets, filterConfig);
-    recordFilterResult(filterResult);
-    
-    if (filterResult.totalBefore !== filterResult.totalAfter) {
-      console.log(`[trading] Filtered markets: ${filterResult.totalBefore} → ${filterResult.totalAfter} (${filterResult.filtersApplied.join(", ")})`);
-    }
-    
-    return filterResult.markets;
-  } catch (err) {
-    console.error("[trading] fetchMarkets error:", err);
+    return data;
+  });
+  
+  // If all retries failed, return empty array
+  if (!result) {
+    console.warn("[trading] Failed to fetch markets after retries, returning empty array");
     return [];
   }
+  
+  const rawMarkets = result.data ?? [];
+
+  // Transform raw API markets into the shape the bot expects
+  const markets: ExtendedMarket[] = [];
+  for (const raw of rawMarkets) {
+    const market = transformMarket(raw);
+    if (market) {
+      markets.push(market);
+    }
+  }
+  
+  // Apply local filters (includes 5-minute resolution filter)
+  const filterResult = applyFilters(markets, filterConfig);
+  recordFilterResult(filterResult);
+  
+  if (filterResult.totalBefore !== filterResult.totalAfter) {
+    console.log(`[trading] Filtered markets: ${filterResult.totalBefore} → ${filterResult.totalAfter} (${filterResult.filtersApplied.join(", ")})`);
+  }
+  
+  return filterResult.markets;
 }
 
 /**
@@ -345,6 +434,8 @@ export async function evaluateAndTrade(market: ExtendedMarket): Promise<void> {
 /**
  * Submit a real order to the Polymarket CLOB API.
  * Requires CLOB_API_KEY, CLOB_API_SECRET, CLOB_API_PASSPHRASE.
+ * 
+ * Uses retry logic for transient failures and provides detailed error logging.
  */
 async function submitOrder(trade: TradeRecord): Promise<void> {
   const baseUrl = config.polymarket.clobApiUrl;
@@ -360,17 +451,29 @@ async function submitOrder(trade: TradeRecord): Promise<void> {
     "POLY_PASSPHRASE": config.polymarket.clobApiPassphrase,
   };
 
-  await axios.post(
-    `${baseUrl}/order`,
-    {
-      market: trade.market,
-      side: trade.side,
-      price: trade.price,
-      size: trade.size,
-      outcome: trade.outcome,
-    },
-    { headers, timeout: 10_000 }
-  );
+  const orderPayload = {
+    market: trade.market,
+    side: trade.side,
+    price: trade.price,
+    size: trade.size,
+    outcome: trade.outcome,
+  };
+
+  // Use retry logic for order submission
+  const result = await withRetry(async () => {
+    const response = await axios.post(
+      `${baseUrl}/order`,
+      orderPayload,
+      { headers, timeout: API_TIMEOUT_MS }
+    );
+    return response.data;
+  });
+
+  if (result === undefined) {
+    throw new Error(`Failed to submit order for ${trade.market} after ${API_RETRY_ATTEMPTS} retries`);
+  }
+
+  console.log(`[trading] Order submitted successfully: ${trade.side} ${trade.size} USDC of "${trade.outcome}" @ ${trade.price}`);
 }
 
 let _tradingLoopTimer: NodeJS.Timeout | null = null;
@@ -385,6 +488,7 @@ const TRADING_PAUSED_LOG_INTERVAL_MS = 300000; // Log "trading paused" at most e
 /** Main trading loop — polls markets and evaluates trade signals.
  *  Supports both paper and live trading modes, controlled via dashboard.
  *  Respects trading hours restriction when enabled.
+ *  Filters markets to only trade those resolving within 5 minutes.
  */
 export async function runTradingLoop(): Promise<void> {
   // Always use 5-minute interval regardless of env setting
@@ -392,6 +496,7 @@ export async function runTradingLoop(): Promise<void> {
   console.log(`[trading] Starting 5-minute trading loop (interval=${interval}ms)`);
   console.log(`[trading] Trading mode: ${isPaperMode() ? 'PAPER' : 'LIVE'}`);
   console.log(`[trading] ${getTradingHoursStatus()}`);
+  console.log(`[trading] Only trading markets resolving within 5 minutes`);
   _isRunning = true;
 
   const tick = async () => {
@@ -410,13 +515,27 @@ export async function runTradingLoop(): Promise<void> {
     
     try {
       const markets = await fetchMarkets();
-      console.log(`[trading] Evaluating ${markets.length} markets…`);
+      
+      if (markets.length === 0) {
+        console.log(`[trading] No markets resolving within 5 minutes found`);
+        return;
+      }
+      
+      console.log(`[trading] Evaluating ${markets.length} markets resolving within 5 minutes…`);
+      
       for (const market of markets) {
         if (!_isRunning) break;
-        await evaluateAndTrade(market);
+        
+        try {
+          await evaluateAndTrade(market);
+        } catch (marketErr) {
+          // Log error for individual market but continue with others
+          console.error(`[trading] Error evaluating market ${market.conditionId}:`, formatApiError(marketErr));
+        }
       }
     } catch (err) {
-      console.error("[trading] Error in trading tick:", err);
+      // Log error but don't crash - the loop will continue on next tick
+      console.error("[trading] Error in trading tick:", formatApiError(err));
     }
   };
 
