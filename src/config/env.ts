@@ -113,7 +113,7 @@ export interface AppConfig {
 /**
  * Parse a string environment variable with a default value.
  */
-function parseString(name: string, defaultValue: string): string {
+function parseEnvString(name: string, defaultValue: string): string {
   return process.env[name] ?? defaultValue;
 }
 
@@ -128,7 +128,7 @@ function parseOptionalString(name: string): string {
 /**
  * Parse an integer environment variable with a default value.
  */
-function parseInt(name: string, defaultValue: number): number {
+function parseEnvInt(name: string, defaultValue: number): number {
   const value = process.env[name];
   if (value === undefined || value === "") {
     return defaultValue;
@@ -144,7 +144,7 @@ function parseInt(name: string, defaultValue: number): number {
 /**
  * Parse a float environment variable with a default value.
  */
-function parseFloat(name: string, defaultValue: number): number {
+function parseEnvFloat(name: string, defaultValue: number): number {
   const value = process.env[name];
   if (value === undefined || value === "") {
     return defaultValue;
@@ -188,50 +188,50 @@ function parseStringArray(name: string): string[] {
 function loadConfig(): AppConfig {
   return {
     polymarket: {
-      clobApiUrl: parseString("CLOB_API_URL", "https://clob.polymarket.com"),
-      clobWsUrl: parseString("CLOB_WS_URL", "wss://clob.polymarket.com/ws"),
+      clobApiUrl: parseEnvString("CLOB_API_URL", "https://clob.polymarket.com"),
+      clobWsUrl: parseEnvString("CLOB_WS_URL", "wss://clob.polymarket.com/ws"),
       clobApiKey: parseOptionalString("CLOB_API_KEY"),
       clobApiSecret: parseOptionalString("CLOB_API_SECRET"),
       clobApiPassphrase: parseOptionalString("CLOB_API_PASSPHRASE"),
     },
     wallet: {
       privateKey: parseOptionalString("PRIVATE_KEY"),
-      polygonRpcUrl: parseString("POLYGON_RPC_URL", "https://polygon-rpc.com"),
-      chainId: parseInt("CHAIN_ID", 137),
+      polygonRpcUrl: parseEnvString("POLYGON_RPC_URL", ""),
+      chainId: parseEnvInt("CHAIN_ID", 137),
     },
     trading: {
       tradingMode: process.env.TRADING_MODE === "live" ? "live" : "paper",
-      maxPositionSizeUsdc: parseFloat("MAX_POSITION_SIZE_USDC", 100),
-      minEdge: parseFloat("MIN_EDGE", 0.05),
-      pollIntervalMs: parseInt("POLL_INTERVAL_MS", 300000),
+      maxPositionSizeUsdc: parseEnvFloat("MAX_POSITION_SIZE_USDC", 100),
+      minEdge: parseEnvFloat("MIN_EDGE", 0.05),
+      pollIntervalMs: parseEnvInt("POLL_INTERVAL_MS", 300000),
       enableSpeedTrading: parseBoolean("ENABLE_SPEED_TRADING", false),
-      minBalanceUsdc: parseFloat("MIN_BALANCE_USDC", 10),
-      lagThreshold: parseFloat("LAG_THRESHOLD", 0.02),
-      maxSpread: parseFloat("MAX_SPREAD", 0.05),
-      throttleMs: parseInt("THROTTLE_MS", 5000),
-      priceHistorySize: parseInt("PRICE_HISTORY_SIZE", 20),
-      lastSecondWindowMs: parseInt("LAST_SECOND_WINDOW_MS", 10000),
-      closeDetectionWindowMs: parseInt("CLOSE_DETECTION_WINDOW_MS", 60000),
-      tradingLoopRestartDelayMs: parseInt("TRADING_LOOP_RESTART_DELAY_MS", 30000),
+      minBalanceUsdc: parseEnvFloat("MIN_BALANCE_USDC", 10),
+      lagThreshold: parseEnvFloat("LAG_THRESHOLD", 0.02),
+      maxSpread: parseEnvFloat("MAX_SPREAD", 0.05),
+      throttleMs: parseEnvInt("THROTTLE_MS", 5000),
+      priceHistorySize: parseEnvInt("PRICE_HISTORY_SIZE", 20),
+      lastSecondWindowMs: parseEnvInt("LAST_SECOND_WINDOW_MS", 10000),
+      closeDetectionWindowMs: parseEnvInt("CLOSE_DETECTION_WINDOW_MS", 60000),
+      tradingLoopRestartDelayMs: parseEnvInt("TRADING_LOOP_RESTART_DELAY_MS", 30000),
     },
     markets: {
-      market5minConditionId: parseString("MARKET_5MIN_CONDITION_ID", "market-5min"),
-      market5minYesToken: parseString("MARKET_5MIN_YES_TOKEN", "market-5min-yes"),
-      market5minNoToken: parseString("MARKET_5MIN_NO_TOKEN", "market-5min-no"),
+      market5minConditionId: parseEnvString("MARKET_5MIN_CONDITION_ID", "market-5min"),
+      market5minYesToken: parseEnvString("MARKET_5MIN_YES_TOKEN", "market-5min-yes"),
+      market5minNoToken: parseEnvString("MARKET_5MIN_NO_TOKEN", "market-5min-no"),
     },
     marketFilters: {
       filtersEnabled: process.env.MARKET_FILTERS_ENABLED !== "false",
-      minLiquidity: parseFloat("MIN_LIQUIDITY", 0),
-      minVolume: parseFloat("MIN_VOLUME", 0),
+      minLiquidity: parseEnvFloat("MIN_LIQUIDITY", 0),
+      minVolume: parseEnvFloat("MIN_VOLUME", 0),
       filterCategories: parseStringArray("FILTER_CATEGORIES"),
       excludeCategories: parseStringArray("EXCLUDE_CATEGORIES"),
-      marketPageSize: parseInt("MARKET_PAGE_SIZE", 100),
+      marketPageSize: parseEnvInt("MARKET_PAGE_SIZE", 100),
     },
     server: {
-      port: parseInt("PORT", 3000),
-      adminSecret: parseString("ADMIN_SECRET", ""),
-      statsBroadcastIntervalMs: parseInt("STATS_BROADCAST_INTERVAL_MS", 10000),
-      dataDir: parseString("DATA_DIR", "./data"),
+      port: parseEnvInt("PORT", 3000),
+      adminSecret: parseEnvString("ADMIN_SECRET", ""),
+      statsBroadcastIntervalMs: parseEnvInt("STATS_BROADCAST_INTERVAL_MS", 10000),
+      dataDir: parseEnvString("DATA_DIR", "./data"),
     },
   };
 }
@@ -312,7 +312,7 @@ export function logConfig(): void {
   
   console.log("[config] Wallet:");
   console.log(`[config]   Private Key: ${config.wallet.privateKey ? "****" : "(not set)"}`);
-  console.log(`[config]   Polygon RPC: ${config.wallet.polygonRpcUrl}`);
+  console.log(`[config]   Polygon RPC: ${config.wallet.polygonRpcUrl || "(not set)"}`);
   console.log(`[config]   Chain ID: ${config.wallet.chainId}`);
   
   console.log("[config] Trading:");

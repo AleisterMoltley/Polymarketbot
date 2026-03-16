@@ -34,7 +34,7 @@ export function getWallet(): Wallet {
   }
 
   const rpcUrl = config.wallet.polygonRpcUrl;
-  if (rpcUrl && rpcUrl !== "https://polygon-rpc.com") {
+  if (rpcUrl) {
     const provider = new JsonRpcProvider(rpcUrl);
     _wallet = new Wallet(privateKey, provider);
   } else {
