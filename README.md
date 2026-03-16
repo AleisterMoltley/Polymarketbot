@@ -1,14 +1,26 @@
 # Polymarketbot
 
-An automated trading bot for [Polymarket](https://polymarket.com) prediction markets, optimized for 5-minute interval trading loops.
+A paper-trade simulation bot for [Polymarket](https://polymarket.com) prediction markets, optimized for 5-minute interval trading loops.
 
 ## Features
 
 - **5-minute interval trading** — optimized for short-term prediction market cycles
 - **Paper-trade mode** — simulate orders without touching real funds
-- **Live trading** — submits real orders to the Polymarket CLOB API
 - **Admin dashboard** — real-time stats via WebSocket, REST API, and a dark-mode UI
 - **Docker-ready** — multi-stage Dockerfile with health-check
+
+## How the 5-Minute Trading Loop Works
+
+The bot runs a continuous trading loop that executes every 5 minutes (configurable via `POLL_INTERVAL_MS`):
+
+1. **Market Polling** — The bot fetches current market data from the Polymarket CLOB API
+2. **Price Analysis** — For each active market, it retrieves YES/NO prices (implied probabilities)
+3. **Edge Detection** — If `1 - price - MIN_EDGE > 0`, the outcome is considered undervalued
+4. **Position Check** — Skips outcomes where a position is already held (prevents duplicates)
+5. **Paper Trade Execution** — Records the simulated trade locally without any blockchain interaction
+6. **Wait** — Sleeps for the configured interval (default: 5 minutes) before the next iteration
+
+This cycle repeats continuously, allowing you to test trading strategies in a risk-free environment.
 
 ## Quick Start
 
@@ -52,9 +64,10 @@ For a full architecture overview and strategy description see [docs/Architecture
 
 Copy `.env.example` to `.env` and fill in:
 
-- `PRIVATE_KEY` — your Polygon wallet private key
 - `CLOB_API_KEY` / `CLOB_API_SECRET` / `CLOB_API_PASSPHRASE` — Polymarket credentials
-- `PAPER_TRADE=true` to run without real orders (default)
-- `POLL_INTERVAL_MS=300000` for 5-minute trading intervals (default)
+- `PAPER_TRADE=true` — enables paper-trade mode (default and recommended)
+- `POLL_INTERVAL_MS=300000` — trading loop interval in milliseconds (default: 5 minutes)
+- `MIN_EDGE=0.05` — minimum edge threshold before entering a trade (default: 5%)
+- `MAX_POSITION_SIZE_USDC=100` — maximum simulated position size per trade
 
 See [docs/Architecture.md](docs/Architecture.md) for all variables.
