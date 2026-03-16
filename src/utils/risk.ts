@@ -59,13 +59,16 @@ export interface PnlStats {
 const BANKROLL_KEY = "bankroll";
 const RISK_POSITIONS_KEY = "riskPositions";
 
-/** Default risk percentage per trade (2% of bankroll) */
+/** 
+ * Default risk percentage per trade as a decimal (0.02 = 2% of bankroll).
+ * This means if a trade hits stop-loss, you lose at most 2% of your bankroll.
+ */
 export const DEFAULT_RISK_PER_TRADE = 0.02;
 
-/** Default stop-loss percentage (e.g., 10% below entry) */
+/** Default stop-loss percentage as a decimal (0.10 = 10% below entry) */
 export const DEFAULT_STOP_LOSS_PERCENT = 0.10;
 
-/** Default take-profit percentage (e.g., 30% above entry for 3:1 risk/reward) */
+/** Default take-profit percentage as a decimal (0.30 = 30% above entry for 3:1 risk/reward) */
 export const DEFAULT_TAKE_PROFIT_PERCENT = 0.30;
 
 // ── Bankroll Management ────────────────────────────────────────────────────

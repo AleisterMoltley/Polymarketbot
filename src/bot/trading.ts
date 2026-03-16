@@ -29,6 +29,15 @@ function newId(): string {
   return `trade-${Date.now()}-${++_tradeIdCounter}`;
 }
 
+/**
+ * Format PNL value with sign prefix for display.
+ * Example: formatPnl(10.50) => "+$10.50", formatPnl(-5.25) => "-$5.25"
+ */
+function formatPnl(pnl: number): string {
+  const sign = pnl >= 0 ? "+" : "";
+  return `${sign}$${pnl.toFixed(2)}`;
+}
+
 export interface Market {
   conditionId: string;
   question: string;
@@ -128,7 +137,7 @@ export async function evaluateAndTrade(market: Market): Promise<void> {
     const takeProfitPrice = calculateTakeProfitPrice(price, "BUY", TAKE_PROFIT_PERCENT);
 
     // Calculate position size using 2% risk rule instead of simple edge-based sizing
-    let size = calculatePositionSize(
+    const rawSize = calculatePositionSize(
       bankroll.currentCapital,
       price,
       stopLossPrice,
@@ -136,11 +145,11 @@ export async function evaluateAndTrade(market: Market): Promise<void> {
     );
 
     // Cap at max position size
-    size = Math.min(maxSize, size);
+    const cappedSize = Math.min(maxSize, rawSize);
 
     // Round to 2 decimal places (cents) for USDC sizing
     const CENTS = 100;
-    size = Math.round(size * CENTS) / CENTS;
+    const size = Math.round(cappedSize * CENTS) / CENTS;
 
     // Validate the trade against risk management rules
     const riskValidation = validateTradeRisk(size, bankroll.currentCapital, MAX_DRAWDOWN_PERCENT);
@@ -384,7 +393,7 @@ async function closePosition(
       trade.status = "CANCELLED";
     }
   } else {
-    console.log(`[paper-trade] SELL ${position.size} USDC of "${position.outcome}" @ ${exitPrice} (${reason}, PNL: ${pnl >= 0 ? "+" : ""}$${pnl.toFixed(2)})`);
+    console.log(`[paper-trade] SELL ${position.size} USDC of "${position.outcome}" @ ${exitPrice} (${reason}, PNL: ${formatPnl(pnl)})`);
   }
 
   // Record the trade
