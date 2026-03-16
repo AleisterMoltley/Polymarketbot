@@ -2,7 +2,7 @@
 # Multi-stage build for lightweight 5-min trading bot
 
 # Stage 1: Install all dependencies and build TypeScript
-FROM node:22-alpine AS builder
+FROM node:25-alpine AS builder
 WORKDIR /app
 COPY package*.json ./
 RUN npm ci
@@ -11,7 +11,7 @@ COPY src ./src
 RUN npm run build
 
 # Stage 2: Lightweight production image
-FROM node:22-alpine AS runner
+FROM node:25-alpine AS runner
 WORKDIR /app
 
 # Create non-root user for security
