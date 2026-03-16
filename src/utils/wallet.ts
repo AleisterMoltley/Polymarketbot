@@ -44,3 +44,16 @@ export async function getBalance(): Promise<string> {
   const balance = await wallet.provider.getBalance(wallet.address);
   return ethers.formatEther(balance);
 }
+
+/**
+ * Automatically swap USDC to MATIC on Polygon.
+ * @param amountUSDC - The amount of USDC to swap (e.g., 100 for 100 USDC)
+ * @returns The transaction hash of the swap
+ */
+export async function autoSwapUSDCtoMATIC(amountUSDC: number): Promise<string> {
+  const { executeSwap } = await import("../bot/swaps");
+  console.log(`[wallet] Initiating swap of ${amountUSDC} USDC to MATIC...`);
+  const txHash = await executeSwap("USDC", "MATIC", amountUSDC.toString());
+  console.log(`[wallet] Swap complete. Transaction hash: ${txHash}`);
+  return txHash;
+}

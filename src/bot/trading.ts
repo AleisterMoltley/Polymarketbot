@@ -112,6 +112,59 @@ async function submitOrder(trade: TradeRecord): Promise<void> {
   );
 }
 
+/**
+ * Place a single order on the Polymarket CLOB.
+ * @param tokenId - The token ID (condition ID) for the market
+ * @param price - The price to place the order at (0-1)
+ * @param amount - The amount in USDC
+ * @param side - 'buy' or 'sell'
+ * @returns The trade record
+ */
+export async function placeOrder(
+  tokenId: string,
+  price: number,
+  amount: number,
+  side: "buy" | "sell"
+): Promise<TradeRecord> {
+  const isPaper = process.env.PAPER_TRADE === "true";
+  const sideUpper = side.toUpperCase() as "BUY" | "SELL";
+
+  const trade: TradeRecord = {
+    id: newId(),
+    market: tokenId,
+    side: sideUpper,
+    // Note: Using tokenId as outcome since placeOrder receives a single token ID.
+    // For full outcome info, use evaluateAndTrade with a Market object.
+    outcome: tokenId,
+    price,
+    size: amount,
+    timestamp: Date.now(),
+    paper: isPaper,
+    status: "OPEN",
+  };
+
+  if (!isPaper) {
+    try {
+      await submitOrder(trade);
+      // Note: submitOrder broadcasts to the CLOB API. Order status after
+      // submission depends on market conditions. Setting to FILLED assumes
+      // immediate execution, which may need adjustment for limit orders.
+      trade.status = "FILLED";
+    } catch (err) {
+      console.error("[trading] placeOrder error:", err);
+      trade.status = "CANCELLED";
+      throw err;
+    }
+  } else {
+    console.log(`[paper-trade] ${sideUpper} ${amount} USDC of ${tokenId} @ ${price}`);
+    trade.status = "FILLED";
+    trade.pnl = 0;
+  }
+
+  recordTrade(trade);
+  return trade;
+}
+
 /** Main trading loop — polls markets and evaluates trade signals. */
 export async function runTradingLoop(): Promise<void> {
   const interval = parseInt(process.env.POLL_INTERVAL_MS ?? "30000", 10);
