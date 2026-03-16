@@ -8,6 +8,13 @@ import { loadStore, saveStore } from "./utils/jsonStore";
 import adminRouter from "./admin/tabs";
 import { runTradingLoop, stopTradingLoop } from "./bot/trading";
 import { getStats, flushStats } from "./admin/stats";
+import { 
+  startSpeedTrading, 
+  stopSpeedTrading, 
+  isSpeedTradingRunning, 
+  getSpeedTradeState,
+  getSpeedTradeHistory
+} from "./bot/speedTrade";
 
 // ── Bootstrap ──────────────────────────────────────────────────────────────
 
@@ -42,8 +49,33 @@ app.get("/ready", (_req, res) => {
   res.json({ 
     status: "ready", 
     timestamp: new Date().toISOString(),
-    stats: getStats()
+    stats: getStats(),
+    speedTrading: isSpeedTradingRunning()
   });
+});
+
+// Speed trading API endpoints
+app.get("/api/speed-trade/status", (_req, res) => {
+  res.json({
+    running: isSpeedTradingRunning(),
+    state: getSpeedTradeState(),
+    history: getSpeedTradeHistory().slice(-50) // Last 50 trades
+  });
+});
+
+app.post("/api/speed-trade/start", async (_req, res) => {
+  try {
+    await startSpeedTrading();
+    res.json({ success: true, message: "Speed trading started" });
+  } catch (err) {
+    const message = err instanceof Error ? err.message : String(err);
+    res.status(500).json({ success: false, error: message });
+  }
+});
+
+app.post("/api/speed-trade/stop", (_req, res) => {
+  stopSpeedTrading();
+  res.json({ success: true, message: "Speed trading stopped" });
 });
 
 // ── HTTP + WebSocket server ────────────────────────────────────────────────
@@ -112,6 +144,10 @@ async function gracefulShutdown(signal: string): Promise<void> {
   console.log("[server] Stopping trading loop...");
   stopTradingLoop();
 
+  // Stop speed trading
+  console.log("[server] Stopping speed trading...");
+  stopSpeedTrading();
+
   // Stop stats broadcast
   stopStatsBroadcast();
 
@@ -164,6 +200,7 @@ server.listen(PORT, () => {
   console.log(`[server] Listening on http://localhost:${PORT}`);
   console.log(`[server] Admin UI  →  http://localhost:${PORT}/admin`);
   console.log(`[server] Health    →  http://localhost:${PORT}/health`);
+  console.log(`[server] Speed Trade API  →  http://localhost:${PORT}/api/speed-trade/status`);
 });
 
 // Start auto-broadcast of stats
@@ -174,3 +211,12 @@ runTradingLoop().catch((err) => {
   console.error("[bot] Trading loop crashed:", err);
   gracefulShutdown("tradingLoopCrash");
 });
+
+// Start speed trading if enabled via environment variable
+const ENABLE_SPEED_TRADING = process.env.ENABLE_SPEED_TRADING === "true";
+if (ENABLE_SPEED_TRADING) {
+  startSpeedTrading().catch((err) => {
+    console.error("[bot] Speed trading startup failed:", err);
+    // Don't crash the whole server, just log the error
+  });
+}
