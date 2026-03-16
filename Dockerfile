@@ -34,7 +34,7 @@ USER botuser
 EXPOSE 3000
 
 # Health check aligned with 5-minute trading interval
-HEALTHCHECK --interval=5m --timeout=30s --start-period=10s --retries=3 \
+HEALTHCHECK --interval=5m --timeout=10s --start-period=10s --retries=3 \
     CMD node ok.js || exit 1
 
 # Environment variables optimized for 5-minute interval trading
