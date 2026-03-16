@@ -1,7 +1,7 @@
 [
   {
     "id": "trade-1710158400000-1",
-    "market": "0xabc123def456abc123def456abc123def456abc1",
+    "market": "0x5000000000000000000000000000000000000001",
     "side": "BUY",
     "outcome": "Yes",
     "price": 0.62,
@@ -12,37 +12,37 @@
     "pnl": 9.5
   },
   {
-    "id": "trade-1710172800000-2",
-    "market": "0xabc123def456abc123def456abc123def456abc1",
+    "id": "trade-1710158700000-2",
+    "market": "0x5000000000000000000000000000000000000001",
     "side": "SELL",
     "outcome": "Yes",
     "price": 0.75,
     "size": 25.0,
-    "timestamp": 1710172800000,
+    "timestamp": 1710158700000,
     "paper": true,
     "status": "FILLED",
     "pnl": 3.25
   },
   {
-    "id": "trade-1710187200000-3",
-    "market": "0xdef789abc012def789abc012def789abc012def7",
+    "id": "trade-1710159000000-3",
+    "market": "0x5000000000000000000000000000000000000001",
     "side": "BUY",
     "outcome": "No",
     "price": 0.38,
     "size": 50.0,
-    "timestamp": 1710187200000,
+    "timestamp": 1710159000000,
     "paper": true,
     "status": "FILLED",
     "pnl": 16.0
   },
   {
-    "id": "trade-1710201600000-4",
-    "market": "0x111222333444555666777888999aaabbbcccddd1",
+    "id": "trade-1710159300000-4",
+    "market": "0x5000000000000000000000000000000000000001",
     "side": "BUY",
     "outcome": "Yes",
     "price": 0.55,
     "size": 30.0,
-    "timestamp": 1710201600000,
+    "timestamp": 1710159300000,
     "paper": true,
     "status": "OPEN",
     "pnl": 0
