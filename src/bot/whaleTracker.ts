@@ -86,6 +86,7 @@ const DEFAULT_MIN_WHALE_PNL = 1000; // Minimum $1000 PnL to be considered a whal
 const DEFAULT_MIN_WIN_RATE = 0.55; // Minimum 55% win rate
 const DEFAULT_MAX_KELLY_FRACTION = 0.25; // Max 25% of bankroll per trade
 const PNL_SCALING_FACTOR = 100000; // Scaling factor for PnL-based confidence adjustment
+const MAX_TRADE_AGE_MS = 5 * 60 * 1000; // 5 minutes - max age of trades to consider for copying
 
 // ── Configuration ──────────────────────────────────────────────────────────
 
@@ -638,9 +639,9 @@ export async function processWhaleTrades(
           continue;
         }
 
-        // Skip old trades (more than 5 minutes old)
+        // Skip old trades
         const tradeAge = Date.now() - trade.timestamp;
-        if (tradeAge > 5 * 60 * 1000) {
+        if (tradeAge > MAX_TRADE_AGE_MS) {
           _lastProcessedTrades.add(trade.id);
           continue;
         }
@@ -824,7 +825,7 @@ export function updateCopiedTradeStatus(
 // ── Tracking Control ───────────────────────────────────────────────────────
 
 const TRACKING_INTERVAL_MS = 30_000; // Check for new whale trades every 30 seconds
-const WHALE_REFRESH_INTERVAL_MS = 15 * 60 * 1000; // Refresh whale list every 15 minutes
+const WHALE_REFRESH_INTERVAL_MS = 900_000; // Refresh whale list every 15 minutes
 
 let _lastWhaleRefresh = 0;
 
