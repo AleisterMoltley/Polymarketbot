@@ -41,6 +41,7 @@ interface ArbitrageConfig {
   cooldownMs: number;
   kalshiApiUrl: string;
   kalshiApiKey: string;
+  maxTradeSize: number;
 }
 
 interface ExecutedArbitrage {
@@ -65,10 +66,19 @@ const DEFAULT_KALSHI_API_URL = "https://trading-api.kalshi.com/trade-api/v2";
 
 let _arbIdCounter = 0;
 let _isRunning = false;
+let _hasCrashed = false;
 let _arbitrageTimer: NodeJS.Timeout | null = null;
 
 function newArbId(): string {
   return `arb-${Date.now()}-${++_arbIdCounter}`;
+}
+
+/**
+ * Mark the arbitrage loop as crashed. Called from index.ts when loop crashes.
+ */
+export function markArbitrageCrashed(): void {
+  _hasCrashed = true;
+  _isRunning = false;
 }
 
 // ── Configuration ──────────────────────────────────────────────────────────
@@ -80,6 +90,7 @@ function getConfig(): ArbitrageConfig {
     cooldownMs: parseInt(process.env.ARB_COOLDOWN_MS ?? "60000", 10),
     kalshiApiUrl: process.env.KALSHI_API_URL ?? DEFAULT_KALSHI_API_URL,
     kalshiApiKey: process.env.KALSHI_API_KEY ?? "",
+    maxTradeSize: parseFloat(process.env.ARB_MAX_TRADE_SIZE ?? "50"),
   };
 }
 
@@ -233,14 +244,43 @@ export async function fetchPolymarketPrices(): Promise<PolymarketPrice[]> {
  * In production, this would be dynamically maintained or use NLP matching.
  * Key: Polymarket conditionId, Value: Kalshi ticker
  */
-const MARKET_PAIRS = getItem<Record<string, string>>("marketPairs") ?? {};
+function getMarketPairsMap(): Record<string, string> {
+  return getItem<Record<string, string>>("marketPairs") ?? {};
+}
+
+/**
+ * Validate Polymarket condition ID format (expected to be a hex string).
+ */
+function isValidPolymarketId(id: string): boolean {
+  return /^0x[0-9a-fA-F]{64}$/.test(id) || /^[0-9a-fA-F]{64}$/.test(id);
+}
+
+/**
+ * Validate Kalshi ticker format (alphanumeric with hyphens).
+ */
+function isValidKalshiTicker(ticker: string): boolean {
+  return /^[A-Z0-9][A-Z0-9-]{1,50}$/.test(ticker);
+}
 
 /**
  * Register a market pair between Polymarket and Kalshi.
+ * @throws Error if validation fails or pair already exists
  */
 export function registerMarketPair(polymarketId: string, kalshiTicker: string): void {
-  MARKET_PAIRS[polymarketId] = kalshiTicker;
-  setItem("marketPairs", MARKET_PAIRS, true);
+  if (!isValidPolymarketId(polymarketId)) {
+    throw new Error(`Invalid Polymarket ID format: ${polymarketId}. Expected 64-character hex string.`);
+  }
+  if (!isValidKalshiTicker(kalshiTicker)) {
+    throw new Error(`Invalid Kalshi ticker format: ${kalshiTicker}. Expected uppercase alphanumeric with hyphens.`);
+  }
+
+  const pairs = getMarketPairsMap();
+  if (pairs[polymarketId] === kalshiTicker) {
+    throw new Error(`Market pair already registered: ${polymarketId} <-> ${kalshiTicker}`);
+  }
+
+  pairs[polymarketId] = kalshiTicker;
+  setItem("marketPairs", pairs, true);
   console.log(`[arbitrage] Registered market pair: ${polymarketId} <-> ${kalshiTicker}`);
 }
 
@@ -248,17 +288,18 @@ export function registerMarketPair(polymarketId: string, kalshiTicker: string): 
  * Get all registered market pairs.
  */
 export function getMarketPairs(): Record<string, string> {
-  return { ...MARKET_PAIRS };
+  return { ...getMarketPairsMap() };
 }
 
 // ── Arbitrage Detection ────────────────────────────────────────────────────
 
 /**
- * Detect arbitrage opportunities by comparing prices between platforms.
- * Looks for mispricings where the price difference exceeds the threshold.
+ * Detect arbitrage opportunities by comparing executable prices between platforms.
+ * Uses bid/ask prices instead of mid-prices to find real arbitrage opportunities.
  * 
- * Example: If Polymarket Yes = 0.60 and Kalshi Yes = 0.55,
- * there's a 0.05 difference that could be arbitraged.
+ * Arbitrage conditions:
+ * - BUY_POLY_SELL_KALSHI: Polymarket ask price < Kalshi bid price
+ * - BUY_KALSHI_SELL_POLY: Kalshi ask price < Polymarket bid price
  */
 export async function detectArbitrageOpportunities(): Promise<ArbitrageOpportunity[]> {
   const config = getConfig();
@@ -278,45 +319,73 @@ export async function detectArbitrageOpportunities(): Promise<ArbitrageOpportuni
     kalshiByTicker.set(market.ticker, market);
   }
 
+  // Get current market pairs (dynamically to pick up new registrations)
+  const marketPairs = getMarketPairsMap();
+
   // Compare prices for matched markets
   for (const polyMarket of polyPrices) {
-    const kalshiTicker = MARKET_PAIRS[polyMarket.conditionId];
+    const kalshiTicker = marketPairs[polyMarket.conditionId];
     if (!kalshiTicker) continue;
 
     const kalshiMarket = kalshiByTicker.get(kalshiTicker);
     if (!kalshiMarket || kalshiMarket.status !== "active") continue;
 
-    // Calculate Yes price from Kalshi (using mid-price of bid/ask)
-    const kalshiYesPrice = (kalshiMarket.yes_bid + kalshiMarket.yes_ask) / 2;
+    // Use executable prices for arbitrage detection:
+    // Polymarket yesPrice is typically the mid-price, we need bid/ask
+    // For simplicity, estimate spread around the mid-price
     const polyYesPrice = polyMarket.yesPrice;
+    const polySpread = 0.01; // Assume 1% spread on Polymarket
+    const polyBid = Math.max(0, polyYesPrice - polySpread / 2);
+    const polyAsk = Math.min(1, polyYesPrice + polySpread / 2);
 
-    // Check for mispricing
-    const priceDiff = Math.abs(polyYesPrice - kalshiYesPrice);
+    // Kalshi provides bid/ask directly
+    const kalshiBid = kalshiMarket.yes_bid;
+    const kalshiAsk = kalshiMarket.yes_ask;
 
-    if (priceDiff >= config.minPriceDifference) {
-      const direction: ArbitrageOpportunity["direction"] =
-        polyYesPrice < kalshiYesPrice
-          ? "BUY_POLY_SELL_KALSHI"
-          : "BUY_KALSHI_SELL_POLY";
+    // Check for arbitrage opportunity 1: Buy on Poly, Sell on Kalshi
+    // We pay Poly ask price and receive Kalshi bid price
+    const buyPolyPriceDiff = kalshiBid - polyAsk;
+    
+    // Check for arbitrage opportunity 2: Buy on Kalshi, Sell on Poly  
+    // We pay Kalshi ask price and receive Poly bid price
+    const buyKalshiPriceDiff = polyBid - kalshiAsk;
 
-      // Estimate potential profit (simplified - doesn't account for fees)
-      const potentialProfit = priceDiff;
-
+    // Only consider opportunities above minimum threshold
+    if (buyPolyPriceDiff >= config.minPriceDifference) {
       const opportunity: ArbitrageOpportunity = {
         id: newArbId(),
         polymarketId: polyMarket.conditionId,
         kalshiTicker,
-        polymarketYesPrice: polyYesPrice,
-        kalshiYesPrice,
-        priceDifference: Math.round(priceDiff * 10000) / 10000,
-        direction,
-        potentialProfit: Math.round(potentialProfit * 10000) / 10000,
+        polymarketYesPrice: polyAsk, // Executable price (what we pay)
+        kalshiYesPrice: kalshiBid,   // Executable price (what we receive)
+        priceDifference: Math.round(buyPolyPriceDiff * 10000) / 10000,
+        direction: "BUY_POLY_SELL_KALSHI",
+        potentialProfit: Math.round(buyPolyPriceDiff * 10000) / 10000, // Per-share profit
         timestamp: Date.now(),
       };
 
       opportunities.push(opportunity);
       console.log(
-        `[arbitrage] Found opportunity: ${direction} | Poly=${polyYesPrice.toFixed(4)} Kalshi=${kalshiYesPrice.toFixed(4)} | Diff=${priceDiff.toFixed(4)}`
+        `[arbitrage] Found opportunity: BUY_POLY_SELL_KALSHI | PolyAsk=${polyAsk.toFixed(4)} KalshiBid=${kalshiBid.toFixed(4)} | Profit=${buyPolyPriceDiff.toFixed(4)}/share`
+      );
+    }
+
+    if (buyKalshiPriceDiff >= config.minPriceDifference) {
+      const opportunity: ArbitrageOpportunity = {
+        id: newArbId(),
+        polymarketId: polyMarket.conditionId,
+        kalshiTicker,
+        polymarketYesPrice: polyBid, // Executable price (what we receive)
+        kalshiYesPrice: kalshiAsk,   // Executable price (what we pay)
+        priceDifference: Math.round(buyKalshiPriceDiff * 10000) / 10000,
+        direction: "BUY_KALSHI_SELL_POLY",
+        potentialProfit: Math.round(buyKalshiPriceDiff * 10000) / 10000, // Per-share profit
+        timestamp: Date.now(),
+      };
+
+      opportunities.push(opportunity);
+      console.log(
+        `[arbitrage] Found opportunity: BUY_KALSHI_SELL_POLY | KalshiAsk=${kalshiAsk.toFixed(4)} PolyBid=${polyBid.toFixed(4)} | Profit=${buyKalshiPriceDiff.toFixed(4)}/share`
       );
     }
   }
@@ -328,6 +397,16 @@ export async function detectArbitrageOpportunities(): Promise<ArbitrageOpportuni
 }
 
 // ── Arbitrage Execution ────────────────────────────────────────────────────
+
+/**
+ * Calculate profit for an arbitrage trade.
+ * Profit = (number of shares) × (price difference per share)
+ * Number of shares = tradeSize / execution price
+ */
+function calculateProfit(tradeSize: number, executionPrice: number, priceDifferencePerShare: number): number {
+  const shares = tradeSize / executionPrice;
+  return Math.round(shares * priceDifferencePerShare * 100) / 100;
+}
 
 /**
  * Execute an arbitrage opportunity.
@@ -349,8 +428,13 @@ export async function executeArbitrage(opportunity: ArbitrageOpportunity): Promi
     throw new Error("Arbitrage cooldown active");
   }
 
-  // Calculate trade size (capped at 5% of bankroll)
-  const tradeSize = Math.min(maxSize, 50); // Also cap at $50 for safety
+  // Calculate trade size (capped at 5% of bankroll AND configurable max)
+  const tradeSize = Math.min(maxSize, config.maxTradeSize);
+
+  // Determine execution price (what we pay to enter the position)
+  const executionPrice = opportunity.direction === "BUY_POLY_SELL_KALSHI"
+    ? opportunity.polymarketYesPrice  // Buying on Polymarket
+    : opportunity.kalshiYesPrice;     // Buying on Kalshi
 
   console.log(`[arbitrage] Executing ${opportunity.direction} with size $${tradeSize}`);
 
@@ -379,7 +463,8 @@ export async function executeArbitrage(opportunity: ArbitrageOpportunity): Promi
       
       executed.polyTrade.status = "FILLED";
       executed.status = "COMPLETED";
-      executed.profit = tradeSize * opportunity.priceDifference;
+      // Correct profit calculation: (tradeSize / executionPrice) * priceDifference
+      executed.profit = calculateProfit(tradeSize, executionPrice, opportunity.priceDifference);
       executed.polyTrade.pnl = executed.profit;
     } else {
       // Live trade - submit real orders
@@ -393,17 +478,19 @@ export async function executeArbitrage(opportunity: ArbitrageOpportunity): Promi
       await submitPolymarketOrder(executed.polyTrade);
       executed.polyTrade.status = "FILLED";
 
-      // Execute Kalshi order
+      // Execute Kalshi order - convert dollars to contract count
+      const contractCount = Math.floor(tradeSize / opportunity.kalshiYesPrice);
       const kalshiOrderId = await submitKalshiOrder(
         opportunity.kalshiTicker,
         executed.polyTrade.side === "BUY" ? "sell" : "buy",
         opportunity.kalshiYesPrice,
-        tradeSize
+        contractCount
       );
       executed.kalshiOrderId = kalshiOrderId;
 
       executed.status = "COMPLETED";
-      executed.profit = tradeSize * opportunity.priceDifference;
+      // Correct profit calculation
+      executed.profit = calculateProfit(tradeSize, executionPrice, opportunity.priceDifference);
       executed.polyTrade.pnl = executed.profit;
     }
   } catch (err) {
@@ -456,17 +543,31 @@ async function submitPolymarketOrder(trade: TradeRecord): Promise<void> {
 
 /**
  * Submit an order to Kalshi API.
+ * @param ticker - Kalshi market ticker
+ * @param side - "buy" or "sell"
+ * @param price - Price in probability format (0-1 range, e.g., 0.55 = 55%)
+ * @param count - Number of contracts to buy/sell
  */
 async function submitKalshiOrder(
   ticker: string,
   side: "buy" | "sell",
   price: number,
-  size: number
+  count: number
 ): Promise<string> {
   const config = getConfig();
 
   if (!config.kalshiApiKey) {
     throw new Error("KALSHI_API_KEY not configured");
+  }
+
+  // Validate price is in probability format (0-1 range)
+  if (price <= 0 || price >= 1) {
+    throw new Error(`Invalid price: ${price}. Expected probability between 0 and 1 (exclusive).`);
+  }
+
+  // Validate contract count
+  if (count <= 0) {
+    throw new Error(`Invalid contract count: ${count}. Must be positive.`);
   }
 
   // Convert price to cents (Kalshi uses integer cents 1-99)
@@ -479,7 +580,7 @@ async function submitKalshiOrder(
       action: side,
       type: "limit",
       side: "yes",
-      count: Math.round(size), // Kalshi uses contract count
+      count: Math.round(count), // Number of contracts
       yes_price: priceCents,
     },
     {
@@ -570,6 +671,7 @@ export function getArbitrageStats(): {
   totalProfit: number;
   lastScanTime: number | null;
   isRunning: boolean;
+  hasCrashed: boolean;
 } {
   const opportunities = getItem<ArbitrageOpportunity[]>(ARBITRAGE_KEY) ?? [];
   const executed = getItem<ExecutedArbitrage[]>(EXECUTED_ARBITRAGE_KEY) ?? [];
@@ -587,6 +689,7 @@ export function getArbitrageStats(): {
     totalProfit: Math.round(totalProfit * 100) / 100,
     lastScanTime: lastScan ?? null,
     isRunning: _isRunning,
+    hasCrashed: _hasCrashed,
   };
 }
 

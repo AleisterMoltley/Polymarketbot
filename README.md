@@ -46,6 +46,7 @@ The bot includes a sophisticated arbitrage module (`src/bot/arbitrage.ts`) that 
 The arbitrage module enforces strict risk limits:
 
 - **Max 5% bankroll per trade** (`ARB_MAX_BANKROLL_PCT=0.05`)
+- **Configurable trade size cap** (`ARB_MAX_TRADE_SIZE=50` in USD)
 - **Cooldown period** between trades to prevent overtrading
 - **Paper trading mode** to test strategies without real money
 - **Balance checks** before executing live trades
@@ -65,6 +66,7 @@ KALSHI_API_KEY=your_kalshi_api_key_here
 # Arbitrage parameters
 ARB_MIN_PRICE_DIFF=0.03      # Minimum price difference to trigger (3 cents)
 ARB_MAX_BANKROLL_PCT=0.05    # Maximum 5% of bankroll per trade
+ARB_MAX_TRADE_SIZE=50        # Maximum trade size in USD (additional safety cap)
 ARB_COOLDOWN_MS=60000        # 60 second cooldown between trades
 ARB_AUTO_EXECUTE=false       # Set to true for automated execution
 ARB_POLL_INTERVAL_MS=30000   # Check for opportunities every 30 seconds

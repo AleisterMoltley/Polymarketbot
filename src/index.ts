@@ -14,6 +14,7 @@ import {
   getArbitrageStats,
   getOpportunities,
   registerMarketPair,
+  markArbitrageCrashed,
 } from "./bot/arbitrage";
 
 // ── Bootstrap ──────────────────────────────────────────────────────────────
@@ -73,9 +74,19 @@ app.post("/arbitrage/register-pair", (req, res) => {
     res.status(400).json({ error: "polymarketId and kalshiTicker are required" });
     return;
   }
+
+  if (typeof polymarketId !== "string" || typeof kalshiTicker !== "string") {
+    res.status(400).json({ error: "polymarketId and kalshiTicker must be strings" });
+    return;
+  }
   
-  registerMarketPair(polymarketId, kalshiTicker);
-  res.json({ success: true, polymarketId, kalshiTicker });
+  try {
+    registerMarketPair(polymarketId.trim(), kalshiTicker.trim().toUpperCase());
+    res.json({ success: true, polymarketId, kalshiTicker });
+  } catch (err) {
+    const errorMessage = err instanceof Error ? err.message : "Registration failed";
+    res.status(400).json({ error: errorMessage });
+  }
 });
 
 // ── HTTP + WebSocket server ────────────────────────────────────────────────
@@ -216,8 +227,9 @@ const arbEnabled = process.env.ARB_ENABLED === "true";
 if (arbEnabled) {
   runArbitrageLoop().catch((err) => {
     console.error("[bot] Arbitrage loop crashed:", err);
-    // Don't shut down the whole server for arbitrage failures
-    console.warn("[bot] Arbitrage loop disabled due to crash");
+    // Mark as crashed so stats reflect the true state
+    markArbitrageCrashed();
+    console.warn("[bot] Arbitrage loop disabled due to crash. Check /arbitrage/stats for status.");
   });
   console.log("[server] Arbitrage loop started for 24/7 cross-platform monitoring");
 } else {
