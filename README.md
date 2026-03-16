@@ -98,7 +98,8 @@ Strategy: BUY on Kalshi at $0.55, SELL on Polymarket at $0.60
 Profit per share: $0.05 (before fees)
 
 With $100 trade size (5% of $2000 bankroll):
-- Potential profit: ~$8.33 (before fees)
+- Shares purchased: $100 / $0.55 ≈ 181.82 shares
+- Profit: 181.82 shares × $0.05 = ~$9.09 (before fees)
 ```
 
 ### Important Notes

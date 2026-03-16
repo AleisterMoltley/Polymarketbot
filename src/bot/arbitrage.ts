@@ -42,6 +42,7 @@ interface ArbitrageConfig {
   kalshiApiUrl: string;
   kalshiApiKey: string;
   maxTradeSize: number;
+  polymarketSpread: number;
 }
 
 interface ExecutedArbitrage {
@@ -91,6 +92,7 @@ function getConfig(): ArbitrageConfig {
     kalshiApiUrl: process.env.KALSHI_API_URL ?? DEFAULT_KALSHI_API_URL,
     kalshiApiKey: process.env.KALSHI_API_KEY ?? "",
     maxTradeSize: parseFloat(process.env.ARB_MAX_TRADE_SIZE ?? "50"),
+    polymarketSpread: parseFloat(process.env.ARB_POLY_SPREAD ?? "0.01"), // Estimated spread on Polymarket
   };
 }
 
@@ -332,11 +334,10 @@ export async function detectArbitrageOpportunities(): Promise<ArbitrageOpportuni
 
     // Use executable prices for arbitrage detection:
     // Polymarket yesPrice is typically the mid-price, we need bid/ask
-    // For simplicity, estimate spread around the mid-price
+    // Estimate spread around the mid-price using configurable value
     const polyYesPrice = polyMarket.yesPrice;
-    const polySpread = 0.01; // Assume 1% spread on Polymarket
-    const polyBid = Math.max(0, polyYesPrice - polySpread / 2);
-    const polyAsk = Math.min(1, polyYesPrice + polySpread / 2);
+    const polyBid = Math.max(0, polyYesPrice - config.polymarketSpread / 2);
+    const polyAsk = Math.min(1, polyYesPrice + config.polymarketSpread / 2);
 
     // Kalshi provides bid/ask directly
     const kalshiBid = kalshiMarket.yes_bid;
@@ -478,8 +479,9 @@ export async function executeArbitrage(opportunity: ArbitrageOpportunity): Promi
       await submitPolymarketOrder(executed.polyTrade);
       executed.polyTrade.status = "FILLED";
 
-      // Execute Kalshi order - convert dollars to contract count
-      const contractCount = Math.floor(tradeSize / opportunity.kalshiYesPrice);
+      // Execute Kalshi order - use execution price for consistent position sizing
+      // This ensures we have equivalent notional exposure on both legs
+      const contractCount = Math.floor(tradeSize / executionPrice);
       const kalshiOrderId = await submitKalshiOrder(
         opportunity.kalshiTicker,
         executed.polyTrade.side === "BUY" ? "sell" : "buy",
@@ -560,9 +562,9 @@ async function submitKalshiOrder(
     throw new Error("KALSHI_API_KEY not configured");
   }
 
-  // Validate price is in probability format (0-1 range)
-  if (price <= 0 || price >= 1) {
-    throw new Error(`Invalid price: ${price}. Expected probability between 0 and 1 (exclusive).`);
+  // Validate price is in probability format (0-1 range, inclusive)
+  if (price < 0 || price > 1) {
+    throw new Error(`Invalid price: ${price}. Expected probability between 0 and 1.`);
   }
 
   // Validate contract count
@@ -571,7 +573,8 @@ async function submitKalshiOrder(
   }
 
   // Convert price to cents (Kalshi uses integer cents 1-99)
-  const priceCents = Math.round(price * 100);
+  // Clamp to valid range to handle edge cases
+  const priceCents = Math.max(1, Math.min(99, Math.round(price * 100)));
 
   const { data } = await axios.post<{ order: { order_id: string } }>(
     `${config.kalshiApiUrl}/portfolio/orders`,

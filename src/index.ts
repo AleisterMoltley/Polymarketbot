@@ -80,9 +80,13 @@ app.post("/arbitrage/register-pair", (req, res) => {
     return;
   }
   
+  // Transform inputs before validation
+  const normalizedPolyId = polymarketId.trim();
+  const normalizedKalshiTicker = kalshiTicker.trim().toUpperCase();
+  
   try {
-    registerMarketPair(polymarketId.trim(), kalshiTicker.trim().toUpperCase());
-    res.json({ success: true, polymarketId, kalshiTicker });
+    registerMarketPair(normalizedPolyId, normalizedKalshiTicker);
+    res.json({ success: true, polymarketId: normalizedPolyId, kalshiTicker: normalizedKalshiTicker });
   } catch (err) {
     const errorMessage = err instanceof Error ? err.message : "Registration failed";
     res.status(400).json({ error: errorMessage });
