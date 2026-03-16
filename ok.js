@@ -7,7 +7,7 @@
  * Optimized for 5-minute trading interval compatibility:
  * - 5-minute timeout (300000ms) to match POLL_INTERVAL_MS
  * - Connection keep-alive for efficient polling
- * - Lightweight HEAD request support
+ * - Response body properly consumed to free resources
  */
 "use strict";
 
