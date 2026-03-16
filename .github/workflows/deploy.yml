@@ -14,6 +14,15 @@ jobs:
         run: npm ci
       - name: Build
         run: npm run build
+      - name: Check Railway token
+        if: ${{ secrets.RAILWAY_TOKEN == '' }}
+        run: |
+          echo "::error::RAILWAY_TOKEN secret is not set. Please add your Railway token to the repository secrets."
+          echo "To fix this:"
+          echo "1. Go to your Railway project settings and generate an API token"
+          echo "2. Navigate to your GitHub repository -> Settings -> Secrets and variables -> Actions"
+          echo "3. Add a new repository secret named RAILWAY_TOKEN with your Railway API token"
+          exit 1
       - name: Deploy
         run: npx @railway/cli up
         env:
