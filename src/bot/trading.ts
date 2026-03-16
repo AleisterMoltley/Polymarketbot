@@ -4,6 +4,12 @@ import { recordTrade, getAllTrades } from "../admin/stats";
 import { getItem, setItem } from "../utils/jsonStore";
 import { isPaperMode } from "../admin/tradingMode";
 import { isTradingAllowed, getTradingHoursStatus } from "../utils/tradingHours";
+import { 
+  applyFilters, 
+  recordFilterResult, 
+  getFilterConfig,
+  type ExtendedMarket 
+} from "../utils/marketFilters";
 import type { TradeRecord } from "../admin/stats";
 
 let _tradeIdCounter = 0;
@@ -17,6 +23,9 @@ export interface Market {
   outcomes: string[];
   prices: number[];
 }
+
+// Re-export ExtendedMarket for external use
+export type { ExtendedMarket } from "../utils/marketFilters";
 
 /** Track open positions to prevent duplicates */
 interface Position {
@@ -43,15 +52,39 @@ function hasExistingPosition(market: string, outcome: string): boolean {
   return getPositions().some((p) => p.market === market && p.outcome === outcome);
 }
 
-/** Fetch a list of active markets from the Polymarket CLOB API. */
-export async function fetchMarkets(): Promise<Market[]> {
+/** Fetch a list of active markets from the Polymarket CLOB API with optional filtering. */
+export async function fetchMarkets(): Promise<ExtendedMarket[]> {
   const baseUrl = process.env.CLOB_API_URL ?? "https://clob.polymarket.com";
+  const filterConfig = getFilterConfig();
+  
   try {
-    const { data } = await axios.get<{ data: Market[] }>(`${baseUrl}/markets`, {
-      params: { active: true, closed: false },
+    // Build query parameters
+    const params: Record<string, unknown> = { 
+      active: true, 
+      closed: false,
+    };
+    
+    // Add pagination parameter if supported by API
+    if (filterConfig.pageSize > 0) {
+      params.limit = filterConfig.pageSize;
+    }
+    
+    const { data } = await axios.get<{ data: ExtendedMarket[] }>(`${baseUrl}/markets`, {
+      params,
       timeout: 10_000,
     });
-    return data.data ?? [];
+    
+    const rawMarkets = data.data ?? [];
+    
+    // Apply local filters
+    const filterResult = applyFilters(rawMarkets, filterConfig);
+    recordFilterResult(filterResult);
+    
+    if (filterResult.totalBefore !== filterResult.totalAfter) {
+      console.log(`[trading] Filtered markets: ${filterResult.totalBefore} → ${filterResult.totalAfter} (${filterResult.filtersApplied.join(", ")})`);
+    }
+    
+    return filterResult.markets;
   } catch (err) {
     console.error("[trading] fetchMarkets error:", err);
     return [];
@@ -64,7 +97,7 @@ export async function fetchMarkets(): Promise<Market[]> {
  * Includes position tracking to prevent duplicate orders.
  * Respects trading hours restriction when enabled.
  */
-export async function evaluateAndTrade(market: Market): Promise<void> {
+export async function evaluateAndTrade(market: ExtendedMarket): Promise<void> {
   // Check trading hours restriction
   if (!isTradingAllowed()) {
     // Trading is paused due to hours restriction - skip silently

@@ -31,12 +31,21 @@ import {
   isTradingAllowed,
   getTradingHoursStatus
 } from "./utils/tradingHours";
+import {
+  initMarketFilters,
+  getFilterConfig,
+  setFilterConfig,
+  resetFilterConfig,
+  getFilterStats,
+  type MarketFilterConfig
+} from "./utils/marketFilters";
 
 // ── Bootstrap ──────────────────────────────────────────────────────────────
 
 loadStore();
 initTradingMode();
 initTradingHours();
+initMarketFilters();
 
 const PORT = parseInt(process.env.PORT ?? "3000", 10);
 const STATS_BROADCAST_INTERVAL = parseInt(process.env.STATS_BROADCAST_INTERVAL_MS ?? "10000", 10);
@@ -241,6 +250,52 @@ app.post("/api/trading-hours/toggle", (_req, res) => {
   }
 });
 
+// ── Market Filters API endpoints ───────────────────────────────────────────
+
+// Get current market filter configuration and stats
+app.get("/api/market-filters", (_req, res) => {
+  res.json(getFilterStats());
+});
+
+// Update market filter configuration
+app.post("/api/market-filters", (req, res) => {
+  try {
+    const updates = req.body as Partial<MarketFilterConfig>;
+    const newConfig = setFilterConfig(updates, "api");
+    
+    // Broadcast filter config change to all connected clients
+    broadcast("marketFilters", getFilterStats());
+    
+    res.json({ 
+      success: true, 
+      message: "Market filters updated",
+      config: newConfig 
+    });
+  } catch (err) {
+    const message = err instanceof Error ? err.message : String(err);
+    res.status(400).json({ success: false, error: message });
+  }
+});
+
+// Reset market filters to defaults
+app.post("/api/market-filters/reset", (_req, res) => {
+  try {
+    const defaultConfig = resetFilterConfig();
+    
+    // Broadcast filter config change to all connected clients
+    broadcast("marketFilters", getFilterStats());
+    
+    res.json({ 
+      success: true, 
+      message: "Market filters reset to defaults",
+      config: defaultConfig 
+    });
+  } catch (err) {
+    const message = err instanceof Error ? err.message : String(err);
+    res.status(500).json({ success: false, error: message });
+  }
+});
+
 // ── HTTP + WebSocket server ────────────────────────────────────────────────
 
 const server = http.createServer(app);
@@ -249,7 +304,7 @@ const wss = new WebSocketServer({ server });
 wss.on("connection", (ws: WebSocket) => {
   console.log("[ws] Client connected");
 
-  // Send current stats, trading mode, and trading hours immediately on connection
+  // Send current stats, trading mode, trading hours, and market filters immediately on connection
   ws.send(JSON.stringify({ event: "stats", data: getStats() }));
   ws.send(JSON.stringify({ event: "tradingMode", data: getTradingModeState() }));
   ws.send(JSON.stringify({ event: "tradingHours", data: {
@@ -257,6 +312,7 @@ wss.on("connection", (ws: WebSocket) => {
     tradingAllowed: isTradingAllowed(),
     statusMessage: getTradingHoursStatus()
   }}));
+  ws.send(JSON.stringify({ event: "marketFilters", data: getFilterStats() }));
 
   ws.on("message", (raw) => {
     try {
@@ -273,6 +329,9 @@ wss.on("connection", (ws: WebSocket) => {
           tradingAllowed: isTradingAllowed(),
           statusMessage: getTradingHoursStatus()
         }}));
+      }
+      if (msg.command === "marketFilters") {
+        ws.send(JSON.stringify({ event: "marketFilters", data: getFilterStats() }));
       }
     } catch {
       // ignore malformed messages
