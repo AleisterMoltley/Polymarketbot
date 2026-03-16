@@ -8,6 +8,13 @@ import { loadStore, saveStore } from "./utils/jsonStore";
 import adminRouter from "./admin/tabs";
 import { runTradingLoop, stopTradingLoop } from "./bot/trading";
 import { getStats, flushStats } from "./admin/stats";
+import {
+  runArbitrageLoop,
+  stopArbitrageLoop,
+  getArbitrageStats,
+  getOpportunities,
+  registerMarketPair,
+} from "./bot/arbitrage";
 
 // ── Bootstrap ──────────────────────────────────────────────────────────────
 
@@ -42,8 +49,33 @@ app.get("/ready", (_req, res) => {
   res.json({ 
     status: "ready", 
     timestamp: new Date().toISOString(),
-    stats: getStats()
+    stats: getStats(),
+    arbitrage: getArbitrageStats(),
   });
+});
+
+// Arbitrage endpoints
+app.get("/arbitrage/stats", (_req, res) => {
+  res.json(getArbitrageStats());
+});
+
+app.get("/arbitrage/opportunities", (_req, res) => {
+  res.json(getOpportunities());
+});
+
+app.post("/arbitrage/register-pair", (req, res) => {
+  const { polymarketId, kalshiTicker } = req.body as {
+    polymarketId?: string;
+    kalshiTicker?: string;
+  };
+  
+  if (!polymarketId || !kalshiTicker) {
+    res.status(400).json({ error: "polymarketId and kalshiTicker are required" });
+    return;
+  }
+  
+  registerMarketPair(polymarketId, kalshiTicker);
+  res.json({ success: true, polymarketId, kalshiTicker });
 });
 
 // ── HTTP + WebSocket server ────────────────────────────────────────────────
@@ -112,6 +144,10 @@ async function gracefulShutdown(signal: string): Promise<void> {
   console.log("[server] Stopping trading loop...");
   stopTradingLoop();
 
+  // Stop the arbitrage loop
+  console.log("[server] Stopping arbitrage loop...");
+  stopArbitrageLoop();
+
   // Stop stats broadcast
   stopStatsBroadcast();
 
@@ -174,3 +210,16 @@ runTradingLoop().catch((err) => {
   console.error("[bot] Trading loop crashed:", err);
   gracefulShutdown("tradingLoopCrash");
 });
+
+// Start the arbitrage loop if enabled (non-blocking, 24/7 operation)
+const arbEnabled = process.env.ARB_ENABLED === "true";
+if (arbEnabled) {
+  runArbitrageLoop().catch((err) => {
+    console.error("[bot] Arbitrage loop crashed:", err);
+    // Don't shut down the whole server for arbitrage failures
+    console.warn("[bot] Arbitrage loop disabled due to crash");
+  });
+  console.log("[server] Arbitrage loop started for 24/7 cross-platform monitoring");
+} else {
+  console.log("[server] Arbitrage loop disabled (set ARB_ENABLED=true to enable)");
+}
