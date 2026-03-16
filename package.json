@@ -1,7 +1,7 @@
 {
   "name": "polymarket-trading-bot",
   "version": "1.0.0",
-  "description": "Automated trading bot for Polymarket prediction markets",
+  "description": "Automated trading bot for Polymarket prediction markets optimized for 5-minute paper trading",
   "main": "dist/index.js",
   "scripts": {
     "build": "tsc",
