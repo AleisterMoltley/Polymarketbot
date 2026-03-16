@@ -8,6 +8,16 @@ import { loadStore, saveStore } from "./utils/jsonStore";
 import adminRouter from "./admin/tabs";
 import { runTradingLoop, stopTradingLoop } from "./bot/trading";
 import { getStats, flushStats } from "./admin/stats";
+import {
+  startWhaleTracking,
+  stopWhaleTracking,
+  getWhaleStats,
+  saveWhaleHistory,
+  loadWhaleHistory,
+  updateCopiedTradeStatus,
+  type CopiedTrade,
+} from "./bot/whaleTracker";
+import { getTokenBalance } from "./utils/wallet";
 
 // ── Bootstrap ──────────────────────────────────────────────────────────────
 
@@ -42,7 +52,8 @@ app.get("/ready", (_req, res) => {
   res.json({ 
     status: "ready", 
     timestamp: new Date().toISOString(),
-    stats: getStats()
+    stats: getStats(),
+    whaleStats: getWhaleStats(),
   });
 });
 
@@ -112,12 +123,17 @@ async function gracefulShutdown(signal: string): Promise<void> {
   console.log("[server] Stopping trading loop...");
   stopTradingLoop();
 
+  // Stop whale tracking
+  console.log("[server] Stopping whale tracking...");
+  stopWhaleTracking();
+
   // Stop stats broadcast
   stopStatsBroadcast();
 
-  // Flush stats to disk
+  // Flush stats and whale history to disk
   console.log("[server] Flushing stats to disk...");
   flushStats();
+  saveWhaleHistory(loadWhaleHistory());
   saveStore();
 
   // Close WebSocket connections
@@ -173,4 +189,58 @@ startStatsBroadcast();
 runTradingLoop().catch((err) => {
   console.error("[bot] Trading loop crashed:", err);
   gracefulShutdown("tradingLoopCrash");
+});
+
+// ── Whale Tracking Integration ─────────────────────────────────────────────
+
+/**
+ * Handle copied trades from whale tracking.
+ * This function is called when whale trades are ready to be copied.
+ */
+async function handleWhaleCopies(copies: CopiedTrade[]): Promise<void> {
+  const isPaper = process.env.PAPER_TRADE === "true";
+
+  for (const copy of copies) {
+    try {
+      if (isPaper) {
+        // In paper mode, just log the copied trade
+        console.log(
+          `[whale-copy] [PAPER] ${copy.side} ${copy.size} USDC @ ${copy.price} (whale: ${copy.whaleAddress.slice(0, 8)}...)`
+        );
+        updateCopiedTradeStatus(copy.id, "EXECUTED");
+      } else {
+        // In live mode, you would submit the order here
+        // For now, we'll just mark it as executed (actual order submission
+        // would require integration with the orders.ts module)
+        console.log(
+          `[whale-copy] [LIVE] ${copy.side} ${copy.size} USDC @ ${copy.price} (whale: ${copy.whaleAddress.slice(0, 8)}...)`
+        );
+        // TODO: Integrate with placeOrder from orders.ts for live trading
+        updateCopiedTradeStatus(copy.id, "EXECUTED");
+      }
+    } catch (err) {
+      console.error(`[whale-copy] Failed to execute copy trade ${copy.id}:`, err);
+      updateCopiedTradeStatus(copy.id, "FAILED");
+    }
+  }
+}
+
+/**
+ * Get current bankroll (USDC balance) for Kelly Criterion calculations.
+ */
+async function getBankroll(): Promise<number> {
+  try {
+    const balance = await getTokenBalance("USDC");
+    return parseFloat(balance);
+  } catch {
+    // Return a default if we can't fetch balance
+    const maxPosition = parseFloat(process.env.MAX_POSITION_SIZE_USDC ?? "100");
+    return maxPosition * 10; // Assume 10x max position as default bankroll
+  }
+}
+
+// Start whale tracking (non-blocking)
+startWhaleTracking(handleWhaleCopies, getBankroll).catch((err) => {
+  console.error("[whaleTracker] Whale tracking startup failed:", err);
+  // Don't crash the bot if whale tracking fails to start
 });
