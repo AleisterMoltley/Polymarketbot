@@ -58,6 +58,41 @@ function hasExistingPosition(market: string, outcome: string): boolean {
   return getPositions().some((p) => p.market === market && p.outcome === outcome);
 }
 
+/** Raw market shape returned by the Polymarket CLOB API */
+interface RawToken {
+  outcome: string;
+  price: number;
+}
+
+interface RawMarket extends Omit<ExtendedMarket, "outcomes" | "prices"> {
+  tokens?: RawToken[];
+  outcomes?: string[];
+  prices?: number[];
+}
+
+/**
+ * Transform a raw API market into the ExtendedMarket shape expected by the bot.
+ * Extracts `outcomes` and `prices` from the `tokens` array when present.
+ * Returns null when the market cannot be transformed into a valid structure.
+ */
+function transformMarket(raw: RawMarket): ExtendedMarket | null {
+  // Already in the expected format — use as-is
+  if (Array.isArray(raw.outcomes) && raw.outcomes.length > 0 &&
+      Array.isArray(raw.prices) && raw.prices.length > 0) {
+    return raw as ExtendedMarket;
+  }
+
+  // Transform from tokens array (standard Polymarket API response)
+  if (Array.isArray(raw.tokens) && raw.tokens.length > 0) {
+    const { tokens, ...rest } = raw;
+    const outcomes = tokens.map(t => t.outcome);
+    const prices   = tokens.map(t => t.price);
+    return { ...rest, outcomes, prices } as ExtendedMarket;
+  }
+
+  return null;
+}
+
 /** Fetch a list of active markets from the Polymarket CLOB API with optional filtering. */
 export async function fetchMarkets(): Promise<ExtendedMarket[]> {
   const baseUrl = process.env.CLOB_API_URL ?? "https://clob.polymarket.com";
@@ -73,15 +108,24 @@ export async function fetchMarkets(): Promise<ExtendedMarket[]> {
     // Add pagination parameter (pageSize is always positive due to validation)
     params.limit = filterConfig.pageSize;
     
-    const { data } = await axios.get<{ data: ExtendedMarket[] }>(`${baseUrl}/markets`, {
+    const { data } = await axios.get<{ data: RawMarket[] }>(`${baseUrl}/markets`, {
       params,
       timeout: 10_000,
     });
     
     const rawMarkets = data.data ?? [];
+
+    // Transform raw API markets into the shape the bot expects
+    const markets: ExtendedMarket[] = [];
+    for (const raw of rawMarkets) {
+      const market = transformMarket(raw);
+      if (market) {
+        markets.push(market);
+      }
+    }
     
     // Apply local filters
-    const filterResult = applyFilters(rawMarkets, filterConfig);
+    const filterResult = applyFilters(markets, filterConfig);
     recordFilterResult(filterResult);
     
     if (filterResult.totalBefore !== filterResult.totalAfter) {
@@ -120,6 +164,12 @@ export async function evaluateAndTrade(market: ExtendedMarket): Promise<void> {
   const maxSize = parseFloat(process.env.MAX_POSITION_SIZE_USDC ?? "100");
   // Use dynamic trading mode from dashboard
   const isPaper = isPaperMode();
+
+  // Safety check: skip markets with missing or empty outcomes/prices
+  if (!Array.isArray(market.outcomes) || market.outcomes.length === 0 ||
+      !Array.isArray(market.prices)   || market.prices.length === 0) {
+    return;
+  }
 
   // For binary markets (Yes/No), validate both outcomes together
   // Sum of prices should be approximately 1 (with some spread for market maker)
