@@ -25,6 +25,9 @@ function createClobSigner(wallet: Wallet): ClobSigner {
   };
 }
 
+/** Valid Chain IDs supported by Polymarket */
+const VALID_CHAIN_IDS = new Set<number>([Chain.POLYGON, Chain.AMOY]);
+
 let _client: ClobClient | null = null;
 
 /**
@@ -35,7 +38,14 @@ function getClient(): ClobClient {
   if (_client) return _client;
 
   const host = process.env.CLOB_API_URL ?? "https://clob.polymarket.com";
-  const chainId = parseInt(process.env.CHAIN_ID ?? "137", 10) as Chain;
+  const chainIdNum = parseInt(process.env.CHAIN_ID ?? "137", 10);
+
+  if (!VALID_CHAIN_IDS.has(chainIdNum)) {
+    throw new Error(
+      `Invalid CHAIN_ID: ${chainIdNum}. Must be ${Chain.POLYGON} (Polygon) or ${Chain.AMOY} (Amoy).`
+    );
+  }
+  const chainId = chainIdNum as Chain;
 
   const apiKey = process.env.CLOB_API_KEY;
   const apiSecret = process.env.CLOB_API_SECRET;
@@ -79,6 +89,14 @@ export async function placeOrder(
   size: number,
   side: "buy" | "sell"
 ) {
+  // Validate inputs for prediction market orders
+  if (price <= 0 || price >= 1) {
+    throw new Error(`Invalid price: ${price}. Must be between 0 and 1 (exclusive).`);
+  }
+  if (size <= 0) {
+    throw new Error(`Invalid size: ${size}. Must be a positive number.`);
+  }
+
   const client = getClient();
   const orderSide = side === "buy" ? Side.BUY : Side.SELL;
 
