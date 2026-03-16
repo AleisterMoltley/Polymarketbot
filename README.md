@@ -88,7 +88,7 @@ Switch between modes instantly via the dashboard toggle. Live mode requires conf
 
 ```bash
 # Clone the repository
-git clone https://github.com/yourusername/Polymarketbot.git
+git clone https://github.com/AleisterMoltley/Polymarketbot.git
 cd Polymarketbot
 
 # Copy environment template
@@ -310,7 +310,7 @@ For detailed architecture documentation, see [docs/Architecture.md](docs/Archite
 | **Node.js** | 25+ | Runtime (ES2024 features) |
 | **TypeScript** | 5.9.3 | Type safety with strict mode |
 | **Express** | 5.2.1 | HTTP server with async support |
-| **ethers** | 6.16.0 | Polygon wallet & transactions |
+| **ethers** | ^6.16.0 | Polygon wallet & transactions |
 | **@polymarket/clob-client** | 5.8.0 | Polymarket CLOB API |
 | **ws** | 8.19.0 | WebSocket for real-time data |
 | **axios** | 1.13.6 | HTTP client for API calls |
