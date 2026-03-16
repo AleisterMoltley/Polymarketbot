@@ -12,8 +12,6 @@ import {
   startWhaleTracking,
   stopWhaleTracking,
   getWhaleStats,
-  saveWhaleHistory,
-  loadWhaleHistory,
   updateCopiedTradeStatus,
   type CopiedTrade,
 } from "./bot/whaleTracker";
@@ -133,7 +131,6 @@ async function gracefulShutdown(signal: string): Promise<void> {
   // Flush stats and whale history to disk
   console.log("[server] Flushing stats to disk...");
   flushStats();
-  saveWhaleHistory(loadWhaleHistory());
   saveStore();
 
   // Close WebSocket connections

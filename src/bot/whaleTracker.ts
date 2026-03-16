@@ -85,6 +85,7 @@ const DEFAULT_MAX_PRICE_DEVIATION = 0.02; // 2% max price change before copying
 const DEFAULT_MIN_WHALE_PNL = 1000; // Minimum $1000 PnL to be considered a whale
 const DEFAULT_MIN_WIN_RATE = 0.55; // Minimum 55% win rate
 const DEFAULT_MAX_KELLY_FRACTION = 0.25; // Max 25% of bankroll per trade
+const PNL_SCALING_FACTOR = 100000; // Scaling factor for PnL-based confidence adjustment
 
 // ── Configuration ──────────────────────────────────────────────────────────
 
@@ -321,6 +322,10 @@ export async function fetchWalletTradesOnChain(
       const amount = isMaker ? BigInt(makerAmountFilled) : BigInt(takerAmountFilled);
       const makerAmount = BigInt(makerAmountFilled);
       const takerAmount = BigInt(takerAmountFilled);
+      
+      // Guard against division by zero
+      if (makerAmount === BigInt(0)) continue;
+      
       const price = Number(takerAmount) / Number(makerAmount);
 
       const block = await event.getBlock();
@@ -453,7 +458,7 @@ export function calculateKellyFraction(
 
   // Apply adjustments based on whale's total PnL
   // More profitable whales get slightly higher confidence
-  const pnlMultiplier = Math.min(1.2, 1 + (totalPnl / 100000)); // Cap at 20% boost
+  const pnlMultiplier = Math.min(1.2, 1 + (totalPnl / PNL_SCALING_FACTOR)); // Cap at 20% boost
   kelly *= pnlMultiplier;
 
   // Apply fractional Kelly (half-Kelly is common for safety)
@@ -593,7 +598,7 @@ export function createCopiedTrade(
   const config = getConfig();
 
   return {
-    id: `copy-${Date.now()}-${Math.random().toString(36).substr(2, 9)}`,
+    id: `copy-${Date.now()}-${Math.random().toString(36).slice(2, 11)}`,
     originalTradeId: trade.id,
     whaleAddress: trade.whaleAddress,
     market: trade.market,
