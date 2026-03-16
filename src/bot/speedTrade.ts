@@ -17,6 +17,7 @@ import WebSocket from "ws";
 import { getWallet, getTokenBalance, hasEnoughBalance } from "../utils/wallet";
 import { recordTrade, getAllTrades, type TradeRecord } from "../admin/stats";
 import { getItem, setItem, saveStore } from "../utils/jsonStore";
+import { isPaperMode } from "../admin/tradingMode";
 import * as fs from "fs";
 import * as path from "path";
 
@@ -118,14 +119,15 @@ const MARKETS: Record<string, { conditionId: string; yesTokenId: string; noToken
   },
 };
 
-// ── 5-Minute Paper Trading Mode ────────────────────────────────────────────
-// This bot is optimized for 5-minute paper trading only.
-// Paper mode is always enabled regardless of environment settings.
-const PAPER_MODE_ONLY = true;
+// ── Trading Mode ────────────────────────────────────────────────────────────
+// Trading mode is dynamically controlled via the dashboard.
+// Use isPaperMode() to check current mode at trade execution time.
 
-// Default configuration (paper mode forced)
+// Default configuration
+// Note: paperMode in this config is only used as a fallback.
+// Actual mode is determined by isPaperMode() at trade execution time.
 const DEFAULT_CONFIG: SpeedTradeConfig = {
-  paperMode: PAPER_MODE_ONLY, // Always paper mode
+  paperMode: true, // Default fallback; actual mode determined by isPaperMode()
   minBalanceUSDC: parseFloat(process.env.MIN_BALANCE_USDC ?? "10"),
   maxPositionSizeUSDC: parseFloat(process.env.MAX_POSITION_SIZE_USDC ?? "50"),
   lagThreshold: parseFloat(process.env.LAG_THRESHOLD ?? "0.02"),
@@ -401,7 +403,7 @@ async function evaluateTradeOpportunity(data: MarketPriceData): Promise<void> {
   const size = Math.min(baseSize * confidenceFactor, config.maxPositionSizeUSDC);
 
   // Check balance (for live trades)
-  if (!config.paperMode) {
+  if (!isPaperMode()) {
     const hasBalance = await hasEnoughBalance("USDC", Math.max(size, config.minBalanceUSDC));
     if (!hasBalance) {
       log(`Insufficient USDC balance for trade`, "warn");
@@ -439,6 +441,9 @@ interface ExecuteTradeParams {
 async function executeTrade(params: ExecuteTradeParams): Promise<void> {
   const { marketId, symbol, tokenId, outcome, price, size, lagAmount, expectedClose, inLastSecondWindow } = params;
 
+  // Use dynamic trading mode
+  const paperMode = isPaperMode();
+
   const trade: SpeedTradeResult = {
     id: newTradeId(),
     marketId,
@@ -448,7 +453,7 @@ async function executeTrade(params: ExecuteTradeParams): Promise<void> {
     price,
     size,
     timestamp: Date.now(),
-    paper: config.paperMode,
+    paper: paperMode,
     status: "OPEN",
     lagAmount,
     expectedClose,
@@ -456,7 +461,7 @@ async function executeTrade(params: ExecuteTradeParams): Promise<void> {
   };
 
   try {
-    if (config.paperMode) {
+    if (paperMode) {
       // Paper trade - simulate execution
       log(`[PAPER] BUY ${size.toFixed(2)} USDC of ${symbol} ${outcome} @ ${price.toFixed(4)} (lag=${lagAmount.toFixed(4)}, lastSec=${inLastSecondWindow})`);
       trade.status = "FILLED";
@@ -545,26 +550,29 @@ function appendToPaperHistory(trade: SpeedTradeResult): void {
 
 // ── Public API ─────────────────────────────────────────────────────────────
 
-/** Start the speed trading loop (5-minute paper trading only). */
+/** Start the speed trading loop. Supports both paper and live trading modes. */
 export async function startSpeedTrading(customConfig?: Partial<SpeedTradeConfig>): Promise<void> {
   if (state.isRunning) {
     log("Speed trading already running", "warn");
     return;
   }
 
-  // Warn if user tries to override paperMode (it's locked to true)
-  if (customConfig?.paperMode === false) {
-    log("Warning: paperMode=false was provided but is ignored. This bot only supports paper trading.", "warn");
+  // Use dynamic trading mode from dashboard
+  const paperMode = isPaperMode();
+  
+  // Merge custom config with dynamic paper mode
+  config = { ...DEFAULT_CONFIG, ...customConfig, paperMode };
+  
+  log(`Starting speed trading (mode=${paperMode ? 'PAPER' : 'LIVE'}, throttle=${config.throttleMs}ms, lagThreshold=${config.lagThreshold})`);
+  
+  // Check balance for live trading
+  if (!paperMode) {
+    const hasBalance = await hasEnoughBalance("USDC", config.minBalanceUSDC);
+    if (!hasBalance) {
+      throw new Error(`Insufficient USDC balance. Minimum required: ${config.minBalanceUSDC} USDC`);
+    }
+    log("Live trading enabled - balance check passed");
   }
-
-  // Merge custom config but always enforce paper mode
-  config = { ...DEFAULT_CONFIG, ...customConfig, paperMode: PAPER_MODE_ONLY };
-  
-  log(`Starting 5-minute paper trading (paper=${config.paperMode}, throttle=${config.throttleMs}ms, lagThreshold=${config.lagThreshold})`);
-  log("Note: This bot only supports paper trading mode for 5-minute intervals");
-  
-  // Paper mode always enabled - no balance check needed
-  // Balance check removed as we're paper trading only
 
   state.isRunning = true;
   state.totalTrades = 0;

@@ -67,15 +67,152 @@
     .badge-filled { background: #238636; color: #fff; }
     .badge-cancelled { background: #6e7681; color: #fff; }
     .badge-paper  { background: #9e6a03; color: #fff; }
+    .badge-live   { background: #da3633; color: #fff; }
     pre { background: #0d1117; border-radius: 6px; padding: 16px; overflow: auto; font-size: 0.8rem; color: #a5d6ff; }
     footer { text-align: center; padding: 16px; color: #484f58; font-size: 0.75rem; }
+    
+    /* Trading Mode Toggle */
+    .mode-toggle-container {
+      display: flex;
+      align-items: center;
+      gap: 12px;
+      margin-left: auto;
+    }
+    .mode-toggle {
+      position: relative;
+      width: 120px;
+      height: 36px;
+      background: #21262d;
+      border-radius: 18px;
+      cursor: pointer;
+      border: 1px solid #30363d;
+      overflow: hidden;
+      transition: all 0.3s ease;
+    }
+    .mode-toggle:hover {
+      border-color: #58a6ff;
+    }
+    .mode-toggle-slider {
+      position: absolute;
+      top: 2px;
+      left: 2px;
+      width: calc(50% - 4px);
+      height: calc(100% - 4px);
+      background: #238636;
+      border-radius: 16px;
+      transition: all 0.3s ease;
+    }
+    .mode-toggle.live .mode-toggle-slider {
+      left: calc(50% + 2px);
+      background: #da3633;
+    }
+    .mode-toggle-labels {
+      position: absolute;
+      top: 0;
+      left: 0;
+      right: 0;
+      bottom: 0;
+      display: flex;
+    }
+    .mode-toggle-label {
+      flex: 1;
+      display: flex;
+      align-items: center;
+      justify-content: center;
+      font-size: 0.75rem;
+      font-weight: 600;
+      color: #8b949e;
+      z-index: 1;
+      transition: color 0.3s ease;
+    }
+    .mode-toggle .mode-toggle-label.paper { color: #fff; }
+    .mode-toggle.live .mode-toggle-label.paper { color: #8b949e; }
+    .mode-toggle.live .mode-toggle-label.live { color: #fff; }
+    .mode-label {
+      font-size: 0.85rem;
+      color: #8b949e;
+    }
+    .mode-warning {
+      position: fixed;
+      top: 0;
+      left: 0;
+      right: 0;
+      bottom: 0;
+      background: rgba(0,0,0,0.8);
+      display: flex;
+      align-items: center;
+      justify-content: center;
+      z-index: 1000;
+    }
+    .mode-warning-content {
+      background: #161b22;
+      border: 1px solid #da3633;
+      border-radius: 8px;
+      padding: 24px;
+      max-width: 400px;
+      text-align: center;
+    }
+    .mode-warning-content h3 {
+      color: #da3633;
+      margin-bottom: 12px;
+    }
+    .mode-warning-content p {
+      color: #c9d1d9;
+      margin-bottom: 20px;
+      line-height: 1.5;
+    }
+    .mode-warning-buttons {
+      display: flex;
+      gap: 12px;
+      justify-content: center;
+    }
+    .mode-warning-buttons button {
+      padding: 8px 20px;
+      border-radius: 6px;
+      border: none;
+      font-size: 0.9rem;
+      cursor: pointer;
+      font-weight: 600;
+    }
+    .btn-cancel {
+      background: #21262d;
+      color: #c9d1d9;
+    }
+    .btn-confirm {
+      background: #da3633;
+      color: #fff;
+    }
+    .hidden { display: none !important; }
   </style>
 </head>
 <body>
   <header>
     <h1>🤖 Polymarketbot</h1>
     <span id="mode-badge">paper</span>
+    <div class="mode-toggle-container">
+      <span class="mode-label">Trading Mode:</span>
+      <div class="mode-toggle" id="mode-toggle" onclick="toggleMode()">
+        <div class="mode-toggle-slider"></div>
+        <div class="mode-toggle-labels">
+          <span class="mode-toggle-label paper">PAPER</span>
+          <span class="mode-toggle-label live">LIVE</span>
+        </div>
+      </div>
+    </div>
   </header>
+
+  <!-- Warning Modal for Live Mode -->
+  <div id="live-mode-warning" class="mode-warning hidden">
+    <div class="mode-warning-content">
+      <h3>⚠️ Switch to Live Trading?</h3>
+      <p>You are about to enable <strong>LIVE TRADING</strong> mode. Real money will be used for trades. Make sure you have sufficient USDC balance and understand the risks.</p>
+      <div class="mode-warning-buttons">
+        <button class="btn-cancel" onclick="cancelModeSwitch()">Cancel</button>
+        <button class="btn-confirm" onclick="confirmModeSwitch()">Enable Live Trading</button>
+      </div>
+    </div>
+  </div>
+
   <nav>
     <button class="active" onclick="showTab('dashboard', this)">Dashboard</button>
     <button onclick="showTab('trades', this)">Trades</button>
@@ -121,6 +258,79 @@
   <footer>Polymarketbot — <span id="ts"></span></footer>
 
   <script>
+    // ── Trading Mode State ────────────────────────────────────────────────
+    let currentMode = 'paper';
+    let pendingModeSwitch = false;
+
+    function updateModeUI(mode) {
+      currentMode = mode;
+      const badge = document.getElementById('mode-badge');
+      const toggle = document.getElementById('mode-toggle');
+      
+      badge.textContent = mode;
+      badge.style.background = mode === 'live' ? '#da3633' : '#238636';
+      
+      if (mode === 'live') {
+        toggle.classList.add('live');
+      } else {
+        toggle.classList.remove('live');
+      }
+    }
+
+    function toggleMode() {
+      if (currentMode === 'paper') {
+        // Show warning when switching to live
+        document.getElementById('live-mode-warning').classList.remove('hidden');
+        pendingModeSwitch = true;
+      } else {
+        // Switch directly to paper (no warning needed)
+        switchMode('paper');
+      }
+    }
+
+    function cancelModeSwitch() {
+      document.getElementById('live-mode-warning').classList.add('hidden');
+      pendingModeSwitch = false;
+    }
+
+    function confirmModeSwitch() {
+      document.getElementById('live-mode-warning').classList.add('hidden');
+      pendingModeSwitch = false;
+      switchMode('live');
+    }
+
+    async function switchMode(mode) {
+      try {
+        const res = await fetch('/api/trading-mode', {
+          method: 'POST',
+          headers: { 'Content-Type': 'application/json' },
+          body: JSON.stringify({ mode })
+        });
+        const data = await res.json();
+        if (data.success) {
+          updateModeUI(data.state.mode);
+          console.log('Trading mode switched to:', data.state.mode);
+        } else {
+          console.error('Failed to switch mode:', data.error);
+          alert('Failed to switch trading mode: ' + data.error);
+        }
+      } catch (err) {
+        console.error('Error switching mode:', err);
+        alert('Error switching trading mode. Check console for details.');
+      }
+    }
+
+    // Load initial trading mode
+    async function loadTradingMode() {
+      try {
+        const res = await fetch('/api/trading-mode');
+        const data = await res.json();
+        updateModeUI(data.mode);
+      } catch (err) {
+        console.error('Failed to load trading mode:', err);
+      }
+    }
+
     function showTab(name, btn) {
       document.querySelectorAll('.tab').forEach(t => t.classList.remove('active'));
       document.querySelectorAll('nav button').forEach(b => b.classList.remove('active'));
@@ -137,6 +347,7 @@
       try {
         const { event, data: payload } = JSON.parse(data);
         if (event === 'stats') renderStats(payload);
+        if (event === 'tradingMode') updateModeUI(payload.mode);
       } catch {}
     });
     setInterval(() => { if (ws.readyState === 1) ws.send(JSON.stringify({ command: 'stats' })); }, 10000);
@@ -154,9 +365,11 @@
     // ── Trades ────────────────────────────────────────────────────────────
     async function loadTrades() {
       const res = await fetch('/admin/trades');
-      const trades = await res.json();
+      const data = await res.json();
+      // API returns { trades: [...], pagination: {...} }
+      const trades = data.trades;
       const tbody = document.getElementById('trades-tbody');
-      if (!trades.length) { tbody.innerHTML = '<tr><td colspan="9" style="color:#484f58">No trades yet.</td></tr>'; return; }
+      if (!trades || !trades.length) { tbody.innerHTML = '<tr><td colspan="9" style="color:#484f58">No trades yet.</td></tr>'; return; }
       tbody.innerHTML = trades.map(t => `
         <tr>
           <td title="${t.id}">${t.id.slice(0, 14)}…</td>
@@ -166,7 +379,7 @@
           <td>${t.price}</td>
           <td>${t.size}</td>
           <td><span class="badge badge-${t.status.toLowerCase()}">${t.status}</span></td>
-          <td><span class="badge ${t.paper ? 'badge-paper' : ''}">${t.paper ? 'paper' : 'live'}</span></td>
+          <td><span class="badge ${t.paper ? 'badge-paper' : 'badge-live'}">${t.paper ? 'paper' : 'live'}</span></td>
           <td>${t.pnl ?? '—'}</td>
         </tr>`).join('');
     }
@@ -176,6 +389,9 @@
       const res = await fetch('/admin/store');
       document.getElementById('store-pre').textContent = JSON.stringify(await res.json(), null, 2);
     }
+
+    // ── Initialize ────────────────────────────────────────────────────────
+    loadTradingMode();
   </script>
 </body>
 </html>

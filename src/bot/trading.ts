@@ -2,6 +2,7 @@ import axios from "axios";
 import { getWallet, getTokenBalance } from "../utils/wallet";
 import { recordTrade, getAllTrades } from "../admin/stats";
 import { getItem, setItem } from "../utils/jsonStore";
+import { isPaperMode } from "../admin/tradingMode";
 import type { TradeRecord } from "../admin/stats";
 
 let _tradeIdCounter = 0;
@@ -58,14 +59,14 @@ export async function fetchMarkets(): Promise<Market[]> {
 
 /**
  * Evaluate a market and return a trade signal if edge exceeds MIN_EDGE.
- * Optimized for 5-minute paper trading only - no real orders are sent.
+ * Supports both paper and live trading modes, controlled via dashboard.
  * Includes position tracking to prevent duplicate orders.
  */
 export async function evaluateAndTrade(market: Market): Promise<void> {
   const minEdge = parseFloat(process.env.MIN_EDGE ?? "0.05");
   const maxSize = parseFloat(process.env.MAX_POSITION_SIZE_USDC ?? "100");
-  // Always use paper mode - this bot only supports paper trading
-  const isPaper = PAPER_MODE_ONLY;
+  // Use dynamic trading mode from dashboard
+  const isPaper = isPaperMode();
 
   for (let i = 0; i < market.outcomes.length; i++) {
     const price = market.prices[i];
@@ -181,18 +182,17 @@ let _tradingLoopTimer: NodeJS.Timeout | null = null;
 let _isRunning = false;
 
 // ── 5-Minute Optimization Constants ────────────────────────────────────────
-// This bot only supports 5-minute trading intervals in paper mode.
+// Trading interval constant for 5-minute trading.
 const FIVE_MINUTE_INTERVAL_MS = 300000; // 5 minutes = 300,000ms
-const PAPER_MODE_ONLY = true; // Paper mode is always enabled
 
 /** Main trading loop — polls markets and evaluates trade signals.
- *  Optimized for 5-minute intervals in paper mode only.
+ *  Supports both paper and live trading modes, controlled via dashboard.
  */
 export async function runTradingLoop(): Promise<void> {
   // Always use 5-minute interval regardless of env setting
   const interval = FIVE_MINUTE_INTERVAL_MS;
-  console.log(`[trading] Starting 5-minute paper trading loop (interval=${interval}ms)`);
-  console.log('[trading] Paper mode: ENABLED (locked)');
+  console.log(`[trading] Starting 5-minute trading loop (interval=${interval}ms)`);
+  console.log(`[trading] Trading mode: ${isPaperMode() ? 'PAPER' : 'LIVE'}`);
   _isRunning = true;
 
   const tick = async () => {

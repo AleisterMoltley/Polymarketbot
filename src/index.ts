@@ -9,6 +9,14 @@ import adminRouter from "./admin/tabs";
 import { runTradingLoop, stopTradingLoop } from "./bot/trading";
 import { getStats, flushStats } from "./admin/stats";
 import { 
+  initTradingMode, 
+  getTradingMode, 
+  getTradingModeState, 
+  setTradingMode, 
+  toggleTradingMode,
+  type TradingMode
+} from "./admin/tradingMode";
+import { 
   startSpeedTrading, 
   stopSpeedTrading, 
   isSpeedTradingRunning, 
@@ -19,6 +27,7 @@ import {
 // ── Bootstrap ──────────────────────────────────────────────────────────────
 
 loadStore();
+initTradingMode();
 
 const PORT = parseInt(process.env.PORT ?? "3000", 10);
 const STATS_BROADCAST_INTERVAL = parseInt(process.env.STATS_BROADCAST_INTERVAL_MS ?? "10000", 10);
@@ -78,6 +87,61 @@ app.post("/api/speed-trade/stop", (_req, res) => {
   res.json({ success: true, message: "Speed trading stopped" });
 });
 
+// ── Trading Mode API endpoints ─────────────────────────────────────────────
+
+// Get current trading mode
+app.get("/api/trading-mode", (_req, res) => {
+  res.json(getTradingModeState());
+});
+
+// Set trading mode
+app.post("/api/trading-mode", (req, res) => {
+  try {
+    const { mode } = req.body as { mode?: string };
+    
+    if (!mode || (mode !== "paper" && mode !== "live")) {
+      res.status(400).json({ 
+        success: false, 
+        error: 'Invalid mode. Must be "paper" or "live".' 
+      });
+      return;
+    }
+    
+    const newState = setTradingMode(mode as TradingMode, "dashboard");
+    
+    // Broadcast mode change to all connected clients
+    broadcast("tradingMode", newState);
+    
+    res.json({ 
+      success: true, 
+      message: `Trading mode changed to ${mode}`,
+      state: newState 
+    });
+  } catch (err) {
+    const message = err instanceof Error ? err.message : String(err);
+    res.status(500).json({ success: false, error: message });
+  }
+});
+
+// Toggle trading mode
+app.post("/api/trading-mode/toggle", (_req, res) => {
+  try {
+    const newState = toggleTradingMode("dashboard");
+    
+    // Broadcast mode change to all connected clients
+    broadcast("tradingMode", newState);
+    
+    res.json({ 
+      success: true, 
+      message: `Trading mode toggled to ${newState.mode}`,
+      state: newState 
+    });
+  } catch (err) {
+    const message = err instanceof Error ? err.message : String(err);
+    res.status(500).json({ success: false, error: message });
+  }
+});
+
 // ── HTTP + WebSocket server ────────────────────────────────────────────────
 
 const server = http.createServer(app);
@@ -86,14 +150,18 @@ const wss = new WebSocketServer({ server });
 wss.on("connection", (ws: WebSocket) => {
   console.log("[ws] Client connected");
 
-  // Send current stats immediately on connection
+  // Send current stats and trading mode immediately on connection
   ws.send(JSON.stringify({ event: "stats", data: getStats() }));
+  ws.send(JSON.stringify({ event: "tradingMode", data: getTradingModeState() }));
 
   ws.on("message", (raw) => {
     try {
       const msg = JSON.parse(raw.toString()) as { command?: string };
       if (msg.command === "stats") {
         ws.send(JSON.stringify({ event: "stats", data: getStats() }));
+      }
+      if (msg.command === "tradingMode") {
+        ws.send(JSON.stringify({ event: "tradingMode", data: getTradingModeState() }));
       }
     } catch {
       // ignore malformed messages
