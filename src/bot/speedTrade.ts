@@ -22,7 +22,7 @@ import * as path from "path";
 
 // ── Types ──────────────────────────────────────────────────────────────────
 
-export interface CryptoPriceData {
+export interface MarketPriceData {
   symbol: string;
   marketId: string;
   yesTokenId: string;
@@ -136,7 +136,7 @@ const DEFAULT_CONFIG: SpeedTradeConfig = {
 let ws: WebSocket | null = null;
 let isConnecting = false;
 let reconnectTimeout: ReturnType<typeof setTimeout> | null = null;
-let priceData: Map<string, CryptoPriceData> = new Map();
+let priceData: Map<string, MarketPriceData> = new Map();
 let config: SpeedTradeConfig = { ...DEFAULT_CONFIG };
 let _tradeIdCounter = 0;
 
@@ -183,7 +183,7 @@ function isInLastSecondWindow(): boolean {
 }
 
 /** Calculate price lag between current price and historical average. */
-function calculatePriceLag(data: CryptoPriceData): number {
+function calculatePriceLag(data: MarketPriceData): number {
   if (data.priceHistory.length < 3) return 0;
   
   const windowSize = Math.min(RECENT_PRICE_WINDOW, data.priceHistory.length);
@@ -192,7 +192,7 @@ function calculatePriceLag(data: CryptoPriceData): number {
 }
 
 /** Detect if price is lagging (unsynced) compared to recent history. */
-function detectPriceLag(data: CryptoPriceData): { isLagging: boolean; lagAmount: number; direction: "up" | "down" } {
+function detectPriceLag(data: MarketPriceData): { isLagging: boolean; lagAmount: number; direction: "up" | "down" } {
   const lagAmount = calculatePriceLag(data);
   const isLagging = lagAmount >= config.lagThreshold;
   
@@ -333,7 +333,7 @@ function handlePriceMessage(data: unknown): void {
     const bestBid = typeof msg.bestBid === "number" ? msg.bestBid : msg.midPrice * DEFAULT_BID_SPREAD;
     const bestAsk = typeof msg.bestAsk === "number" ? msg.bestAsk : msg.midPrice * DEFAULT_ASK_SPREAD;
 
-    const updatedData: CryptoPriceData = {
+    const updatedData: MarketPriceData = {
       symbol,
       marketId,
       yesTokenId: marketConfig.yesTokenId,
@@ -358,7 +358,7 @@ function handlePriceMessage(data: unknown): void {
 // ── Trading Logic ──────────────────────────────────────────────────────────
 
 /** Evaluate if there's a trade opportunity based on price lag. */
-async function evaluateTradeOpportunity(data: CryptoPriceData): Promise<void> {
+async function evaluateTradeOpportunity(data: MarketPriceData): Promise<void> {
   // Check throttle
   if (isThrottled(data.marketId)) {
     return;
@@ -598,7 +598,7 @@ export function stopSpeedTrading(): void {
 }
 
 /** Get current speed trading state. */
-export function getSpeedTradeState(): SpeedTradeState & { prices: CryptoPriceData[] } {
+export function getSpeedTradeState(): SpeedTradeState & { prices: MarketPriceData[] } {
   return {
     ...state,
     currentPositions: new Map(state.currentPositions),
@@ -639,7 +639,7 @@ export function getSpeedTradeHistory(): SpeedTradeResult[] {
 }
 
 /** Get price data for a specific market symbol. */
-export function getCryptoPriceData(symbol: string): CryptoPriceData | undefined {
+export function getMarketPriceData(symbol: string): MarketPriceData | undefined {
   const marketConfig = MARKETS[symbol];
   if (!marketConfig) return undefined;
   return priceData.get(marketConfig.conditionId);
@@ -647,7 +647,7 @@ export function getCryptoPriceData(symbol: string): CryptoPriceData | undefined 
 
 /** Manually trigger a trade opportunity check (for testing). */
 export async function triggerTradeCheck(symbol: string): Promise<void> {
-  const data = getCryptoPriceData(symbol);
+  const data = getMarketPriceData(symbol);
   if (data) {
     await evaluateTradeOpportunity(data);
   }
