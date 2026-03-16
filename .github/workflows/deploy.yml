@@ -10,6 +10,6 @@ jobs:
       - name: Build
         run: npm run build
       - name: Deploy
-        uses: railwayapp/deploy-action@v1
+        uses: railwayapp-automation/railway-action@v1.2.9
         with:
-          railway_token: ${{ secrets.RAILWAY_TOKEN }}
+          railwayToken: ${{ secrets.RAILWAY_TOKEN }}
