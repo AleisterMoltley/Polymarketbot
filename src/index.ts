@@ -23,11 +23,20 @@ import {
   getSpeedTradeState,
   getSpeedTradeHistory
 } from "./bot/speedTrade";
+import {
+  initTradingHours,
+  getTradingHoursState,
+  setTradingHours,
+  toggleTradingHours,
+  isTradingAllowed,
+  getTradingHoursStatus
+} from "./utils/tradingHours";
 
 // ── Bootstrap ──────────────────────────────────────────────────────────────
 
 loadStore();
 initTradingMode();
+initTradingHours();
 
 const PORT = parseInt(process.env.PORT ?? "3000", 10);
 const STATS_BROADCAST_INTERVAL = parseInt(process.env.STATS_BROADCAST_INTERVAL_MS ?? "10000", 10);
@@ -142,6 +151,96 @@ app.post("/api/trading-mode/toggle", (_req, res) => {
   }
 });
 
+// ── Trading Hours API endpoints ────────────────────────────────────────────
+
+// Get current trading hours state
+app.get("/api/trading-hours", (_req, res) => {
+  res.json({
+    ...getTradingHoursState(),
+    tradingAllowed: isTradingAllowed(),
+    statusMessage: getTradingHoursStatus()
+  });
+});
+
+// Set trading hours configuration
+app.post("/api/trading-hours", (req, res) => {
+  try {
+    const { enabled, startHour, endHour } = req.body as { 
+      enabled?: boolean; 
+      startHour?: number; 
+      endHour?: number; 
+    };
+    
+    // Validate input types before passing to setTradingHours
+    if (enabled !== undefined && typeof enabled !== "boolean") {
+      res.status(400).json({ success: false, error: "Invalid enabled: must be a boolean" });
+      return;
+    }
+    if (startHour !== undefined && (typeof startHour !== "number" || !Number.isInteger(startHour))) {
+      res.status(400).json({ success: false, error: "Invalid startHour: must be an integer" });
+      return;
+    }
+    if (endHour !== undefined && (typeof endHour !== "number" || !Number.isInteger(endHour))) {
+      res.status(400).json({ success: false, error: "Invalid endHour: must be an integer" });
+      return;
+    }
+    
+    const newState = setTradingHours({ 
+      enabled, 
+      startHour, 
+      endHour, 
+      changedBy: "dashboard" 
+    });
+    
+    // Broadcast trading hours change to all connected clients
+    broadcast("tradingHours", {
+      ...newState,
+      tradingAllowed: isTradingAllowed(),
+      statusMessage: getTradingHoursStatus()
+    });
+    
+    res.json({ 
+      success: true, 
+      message: `Trading hours updated`,
+      state: {
+        ...newState,
+        tradingAllowed: isTradingAllowed(),
+        statusMessage: getTradingHoursStatus()
+      }
+    });
+  } catch (err) {
+    const message = err instanceof Error ? err.message : String(err);
+    res.status(400).json({ success: false, error: message });
+  }
+});
+
+// Toggle trading hours restriction on/off
+app.post("/api/trading-hours/toggle", (_req, res) => {
+  try {
+    const newState = toggleTradingHours("dashboard");
+    
+    // Broadcast trading hours change to all connected clients
+    broadcast("tradingHours", {
+      ...newState,
+      tradingAllowed: isTradingAllowed(),
+      statusMessage: getTradingHoursStatus()
+    });
+    
+    res.json({ 
+      success: true, 
+      message: `Trading hours restriction ${newState.enabled ? 'enabled' : 'disabled'}`,
+      state: {
+        ...newState,
+        tradingAllowed: isTradingAllowed(),
+        statusMessage: getTradingHoursStatus()
+      }
+    });
+  } catch (err) {
+    const message = err instanceof Error ? err.message : String(err);
+    res.status(500).json({ success: false, error: message });
+  }
+});
+
 // ── HTTP + WebSocket server ────────────────────────────────────────────────
 
 const server = http.createServer(app);
@@ -150,9 +249,14 @@ const wss = new WebSocketServer({ server });
 wss.on("connection", (ws: WebSocket) => {
   console.log("[ws] Client connected");
 
-  // Send current stats and trading mode immediately on connection
+  // Send current stats, trading mode, and trading hours immediately on connection
   ws.send(JSON.stringify({ event: "stats", data: getStats() }));
   ws.send(JSON.stringify({ event: "tradingMode", data: getTradingModeState() }));
+  ws.send(JSON.stringify({ event: "tradingHours", data: {
+    ...getTradingHoursState(),
+    tradingAllowed: isTradingAllowed(),
+    statusMessage: getTradingHoursStatus()
+  }}));
 
   ws.on("message", (raw) => {
     try {
@@ -162,6 +266,13 @@ wss.on("connection", (ws: WebSocket) => {
       }
       if (msg.command === "tradingMode") {
         ws.send(JSON.stringify({ event: "tradingMode", data: getTradingModeState() }));
+      }
+      if (msg.command === "tradingHours") {
+        ws.send(JSON.stringify({ event: "tradingHours", data: {
+          ...getTradingHoursState(),
+          tradingAllowed: isTradingAllowed(),
+          statusMessage: getTradingHoursStatus()
+        }}));
       }
     } catch {
       // ignore malformed messages

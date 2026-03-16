@@ -3,6 +3,7 @@ import { getWallet, getTokenBalance } from "../utils/wallet";
 import { recordTrade, getAllTrades } from "../admin/stats";
 import { getItem, setItem } from "../utils/jsonStore";
 import { isPaperMode } from "../admin/tradingMode";
+import { isTradingAllowed, getTradingHoursStatus } from "../utils/tradingHours";
 import type { TradeRecord } from "../admin/stats";
 
 let _tradeIdCounter = 0;
@@ -61,8 +62,15 @@ export async function fetchMarkets(): Promise<Market[]> {
  * Evaluate a market and return a trade signal if edge exceeds MIN_EDGE.
  * Supports both paper and live trading modes, controlled via dashboard.
  * Includes position tracking to prevent duplicate orders.
+ * Respects trading hours restriction when enabled.
  */
 export async function evaluateAndTrade(market: Market): Promise<void> {
+  // Check trading hours restriction
+  if (!isTradingAllowed()) {
+    // Trading is paused due to hours restriction - skip silently
+    return;
+  }
+
   const minEdge = parseFloat(process.env.MIN_EDGE ?? "0.05");
   const maxSize = parseFloat(process.env.MAX_POSITION_SIZE_USDC ?? "100");
   // Use dynamic trading mode from dashboard
@@ -180,23 +188,38 @@ async function submitOrder(trade: TradeRecord): Promise<void> {
 
 let _tradingLoopTimer: NodeJS.Timeout | null = null;
 let _isRunning = false;
+let _lastTradingPausedLog = 0; // Track last time we logged trading paused message
 
 // ── 5-Minute Optimization Constants ────────────────────────────────────────
 // Trading interval constant for 5-minute trading.
 const FIVE_MINUTE_INTERVAL_MS = 300000; // 5 minutes = 300,000ms
+const TRADING_PAUSED_LOG_INTERVAL_MS = 300000; // Log "trading paused" at most every 5 minutes
 
 /** Main trading loop — polls markets and evaluates trade signals.
  *  Supports both paper and live trading modes, controlled via dashboard.
+ *  Respects trading hours restriction when enabled.
  */
 export async function runTradingLoop(): Promise<void> {
   // Always use 5-minute interval regardless of env setting
   const interval = FIVE_MINUTE_INTERVAL_MS;
   console.log(`[trading] Starting 5-minute trading loop (interval=${interval}ms)`);
   console.log(`[trading] Trading mode: ${isPaperMode() ? 'PAPER' : 'LIVE'}`);
+  console.log(`[trading] ${getTradingHoursStatus()}`);
   _isRunning = true;
 
   const tick = async () => {
     if (!_isRunning) return;
+    
+    // Check trading hours at each tick
+    if (!isTradingAllowed()) {
+      // Only log periodically to avoid spamming logs
+      const now = Date.now();
+      if (now - _lastTradingPausedLog >= TRADING_PAUSED_LOG_INTERVAL_MS) {
+        console.log(`[trading] ⏸️ Trading paused - outside trading hours`);
+        _lastTradingPausedLog = now;
+      }
+      return;
+    }
     
     try {
       const markets = await fetchMarkets();
