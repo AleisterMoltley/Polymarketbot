@@ -18,6 +18,18 @@
 
 ---
 
+## 🔄 Quick Update (Mac)
+
+To update to the latest version on your Mac, open Terminal and run:
+
+```bash
+cd ~/Polymarketbot && git pull origin main && npm install && npm run build
+```
+
+> Replace `~/Polymarketbot` with your actual installation path if different.
+
+---
+
 ## 📸 Screenshots
 
 ### Admin Dashboard
