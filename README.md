@@ -30,6 +30,72 @@ cd ~/Polymarketbot && git pull origin main && npm install && npm run build
 
 ---
 
+## 📤 How to Update GitHub with Your Files
+
+If you have made changes to the code on your computer and want to save (push) those changes to GitHub, follow these steps.
+
+### Mac / Linux
+
+Open Terminal and navigate to your project folder:
+
+```bash
+cd ~/Polymarketbot
+```
+
+Stage all changed files:
+
+```bash
+git add .
+```
+
+Commit the changes with a short message describing what you changed:
+
+```bash
+git commit -m "Describe what you changed"
+```
+
+Push the changes to GitHub:
+
+```bash
+git push origin main
+```
+
+> **Tip:** If this is your first time pushing, GitHub may ask for your username and a [Personal Access Token](https://docs.github.com/en/authentication/keeping-your-account-and-data-secure/managing-your-personal-access-tokens) instead of your password.
+
+### Windows
+
+Open PowerShell and navigate to your project folder:
+
+```powershell
+cd $HOME\Polymarketbot
+```
+
+Stage all changed files:
+
+```powershell
+git add .
+```
+
+Commit the changes:
+
+```powershell
+git commit -m "Describe what you changed"
+```
+
+Push to GitHub:
+
+```powershell
+git push origin main
+```
+
+> **Important:** Never commit your `.env` file (it contains private keys). It is already listed in `.gitignore` to help prevent this.
+
+For a detailed walkthrough, see the platform-specific guides:
+- **Mac**: [docs/MacSetup.md — Update GitHub with Your Files](docs/MacSetup.md#16-update-github-with-your-files)
+- **Windows**: [docs/WindowsSetup.md — Update GitHub with Your Files](docs/WindowsSetup.md#16-update-github-with-your-files)
+
+---
+
 ## 📸 Screenshots
 
 ### Admin Dashboard

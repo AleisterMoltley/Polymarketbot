@@ -21,6 +21,7 @@ A comprehensive step-by-step guide to set up and run Polymarketbot on macOS.
 13. [Access the Admin Dashboard](#13-access-the-admin-dashboard)
 14. [Optional: Docker Setup](#14-optional-docker-setup)
 15. [Troubleshooting](#15-troubleshooting)
+16. [Update GitHub with Your Files](#16-update-github-with-your-files)
 
 ---
 
@@ -753,6 +754,65 @@ npm run build
 4. **Start with small position sizes** when switching to live trading.
 5. **Monitor the bot regularly** to ensure it's functioning correctly.
 6. **Keep your dependencies updated** to patch security vulnerabilities.
+
+---
+
+## 16. Update GitHub with Your Files
+
+If you have made changes to the code on your Mac and want to save (push) those changes to GitHub, follow the steps below.
+
+### Step 16.1: Open Terminal and Navigate to Your Project
+
+```bash
+cd ~/Polymarketbot
+```
+
+> Replace `~/Polymarketbot` with your actual installation path if different.
+
+### Step 16.2: Check What Has Changed
+
+See which files you have modified:
+
+```bash
+git status
+```
+
+### Step 16.3: Stage Your Changes
+
+To stage all changed files:
+
+```bash
+git add .
+```
+
+To stage only specific files:
+
+```bash
+git add src/bot/trading.ts
+```
+
+### Step 16.4: Commit Your Changes
+
+Write a short message describing what you changed:
+
+```bash
+git commit -m "Describe what you changed"
+```
+
+### Step 16.5: Push to GitHub
+
+```bash
+git push origin main
+```
+
+After this command completes, your files will be updated on GitHub.
+
+> **First-time push:** GitHub may prompt for your username and a [Personal Access Token (PAT)](https://docs.github.com/en/authentication/keeping-your-account-and-data-secure/managing-your-personal-access-tokens). Use a PAT instead of your GitHub password.
+
+### Important Notes
+
+- **Never commit your `.env` file** — it contains private keys and API secrets. It is already excluded via `.gitignore`.
+- If you see `error: failed to push some refs`, run `git pull origin main` first to merge any upstream changes, then push again.
 
 ---
 
